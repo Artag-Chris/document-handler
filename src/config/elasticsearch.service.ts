@@ -28,7 +28,7 @@ export class ElasticsearchService {
         username: this.config.username,
         password: this.config.password
       } : undefined,
-      // Configuración adicional para desarrollo
+      // Configuración simplificada para Elasticsearch 8.x
       requestTimeout: 30000,
       pingTimeout: 3000
     });
@@ -50,6 +50,9 @@ export class ElasticsearchService {
         username: this.config.username,
         password: this.config.password
       } : undefined,
+      // Configuración simplificada para Elasticsearch 8.x
+      requestTimeout: 30000,
+      pingTimeout: 3000
     });
   }
 

@@ -1,7 +1,8 @@
 import { Router } from 'express';
-import { AvancisRoutes } from '../avancis/avancis.routes';
+import { DocumentsRoutes } from '../documents/documents.routes';
+import { RetrievalRoutes } from '../retrieval/retrieval.routes';
 
-//import { PrismaRoutes } from '../prisma/prisma.routes';
+
 
 export class AppRoutes {
   static get routes(): Router {
@@ -10,8 +11,10 @@ export class AppRoutes {
     aqui iran el nombre de los modulos que usaremos y la importacion de sus rutas por defecto esta prsima como ORMs
     */
   
-     router.use(`/api/avancis`,AvancisRoutes.routes)
-  //  router.use(`/api/prisma`, PrismaRoutes.routes);
+    
+    router.use(`/api/documents`, DocumentsRoutes.routes)
+    router.use(`/api/retrieval`, RetrievalRoutes.routes)
+    //  router.use(`/api/prisma`, PrismaRoutes.routes);
     // aqui colocare la nueva ruta para el manejo del email
  
 

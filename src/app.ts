@@ -11,6 +11,8 @@ import { createServer } from 'http';
 function main() {
   const server = new Server({
     port: envs.PORT,
+    max_file_size: '500mb',
+    timeout: 600000 // 10 minutos para operaciones largas
   });
   const httpServer = createServer(server.app);
 

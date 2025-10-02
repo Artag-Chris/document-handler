@@ -14,30 +14,70 @@ export class DocumentsController {
         });
       }
 
-      const { title, description, tags, category } = req.body;
+      const { 
+        title, 
+        description, 
+        tags, 
+        category, 
+        employeeUuid, 
+        employeeName, 
+        employeeCedula, 
+        documentType 
+      } = req.body;
+
+      // Validar que employeeUuid esté presente
+      if (!employeeUuid) {
+        return res.status(400).json({
+          error: 'employeeUuid es requerido para organizar los documentos'
+        });
+      }
       
       const tagsArray = tags ? (Array.isArray(tags) ? tags : tags.split(',').map((tag: string) => tag.trim())) : [];
 
-      const document = await this.documentsService.uploadDocument(req.file, {
+      const result = await this.documentsService.uploadDocument(req.file, {
         title,
         description,
         tags: tagsArray,
-        category
+        category,
+        employeeUuid,
+        employeeName,
+        employeeCedula,
+        documentType: documentType || 'documentos'
+      });
+
+      // Log para Elasticsearch
+      console.log('🔍 Datos preparados para Elasticsearch:', {
+        index: `documents-${result.document.year}`,
+        type: '_doc',
+        id: result.document.id,
+        body: result.elasticsearchData
       });
 
       res.status(201).json({
         message: 'Documento subido exitosamente',
         document: {
-          id: document.id,
-          title: document.title,
-          filename: document.filename,
-          originalName: document.originalName,
-          size: document.size,
-          mimetype: document.mimetype,
-          uploadDate: document.uploadDate,
-          category: document.category,
-          tags: document.tags,
-          keywords: document.keywords
+          id: result.document.id,
+          title: result.document.title,
+          filename: result.document.filename,
+          originalName: result.document.originalName,
+          size: result.document.size,
+          mimetype: result.document.mimetype,
+          uploadDate: result.document.uploadDate,
+          category: result.document.category,
+          tags: result.document.tags,
+          keywords: result.document.keywords,
+          employeeUuid: result.document.employeeUuid,
+          employeeName: result.document.employeeName,
+          employeeCedula: result.document.employeeCedula,
+          documentType: result.document.documentType,
+          year: result.document.year,
+          relativePath: result.document.relativePath
+        },
+        elasticsearchData: result.elasticsearchData,
+        indexInfo: {
+          suggestedIndex: `documents-${result.document.year}`,
+          documentPath: `uploads/${result.document.year}/${result.document.employeeUuid}/${result.document.documentType}`,
+          readyForElasticsearch: true
         }
       });
     } catch (error) {
@@ -56,24 +96,47 @@ export class DocumentsController {
         });
       }
 
+      const { employeeUuid, employeeName, employeeCedula, documentType } = req.body;
+
+      // Validar que employeeUuid esté presente
+      if (!employeeUuid) {
+        return res.status(400).json({
+          error: 'employeeUuid es requerido para organizar los documentos'
+        });
+      }
+
       const uploadPromises = req.files.map(async (file: Express.Multer.File) => {
-        return await this.documentsService.uploadDocument(file);
+        return await this.documentsService.uploadDocument(file, {
+          employeeUuid,
+          employeeName,
+          employeeCedula,
+          documentType: documentType || 'documentos'
+        });
       });
 
-      const documents = await Promise.all(uploadPromises);
+      const results = await Promise.all(uploadPromises);
 
       res.status(201).json({
-        message: `${documents.length} documentos subidos exitosamente`,
-        documents: documents.map(doc => ({
-          id: doc.id,
-          title: doc.title,
-          filename: doc.filename,
-          originalName: doc.originalName,
-          size: doc.size,
-          mimetype: doc.mimetype,
-          uploadDate: doc.uploadDate,
-          keywords: doc.keywords
-        }))
+        message: `${results.length} documentos subidos exitosamente`,
+        documents: results.map(result => ({
+          id: result.document.id,
+          title: result.document.title,
+          filename: result.document.filename,
+          originalName: result.document.originalName,
+          size: result.document.size,
+          mimetype: result.document.mimetype,
+          uploadDate: result.document.uploadDate,
+          keywords: result.document.keywords,
+          employeeUuid: result.document.employeeUuid,
+          documentType: result.document.documentType,
+          year: result.document.year
+        })),
+        elasticsearchBatch: results.map(result => result.elasticsearchData),
+        indexInfo: {
+          suggestedIndex: `documents-${new Date().getFullYear()}`,
+          totalDocuments: results.length,
+          readyForElasticsearch: true
+        }
       });
     } catch (error) {
       console.error('Error in uploadMultipleDocuments:', error);

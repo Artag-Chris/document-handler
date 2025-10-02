@@ -59,7 +59,64 @@ export const validateMultipleDocumentUpload = (req: Request, res: Response, next
 };
 
 export const validateDocumentMetadata = (req: Request, res: Response, next: NextFunction) => {
-  const { title, description, category, tags } = req.body;
+  const { 
+    title, 
+    description, 
+    category, 
+    tags, 
+    employeeUuid, 
+    employeeName, 
+    employeeCedula, 
+    documentType 
+  } = req.body;
+
+  // Validar employeeUuid (requerido)
+  if (!employeeUuid) {
+    return res.status(400).json({
+      error: 'employeeUuid es requerido'
+    });
+  }
+
+  // Validar formato UUID
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  if (!uuidRegex.test(employeeUuid)) {
+    return res.status(400).json({
+      error: 'Formato de employeeUuid inválido'
+    });
+  }
+
+  // Validar nombre del empleado si se proporciona
+  if (employeeName && (typeof employeeName !== 'string' || employeeName.trim().length === 0)) {
+    return res.status(400).json({
+      error: 'El nombre del empleado debe ser una cadena de texto válida'
+    });
+  }
+
+  // Validar cédula si se proporciona
+  if (employeeCedula && (typeof employeeCedula !== 'string' || employeeCedula.trim().length === 0)) {
+    return res.status(400).json({
+      error: 'La cédula del empleado debe ser una cadena de texto válida'
+    });
+  }
+
+  // Validar tipo de documento
+  if (documentType && (typeof documentType !== 'string' || documentType.trim().length === 0)) {
+    return res.status(400).json({
+      error: 'El tipo de documento debe ser una cadena de texto válida'
+    });
+  }
+
+  // Validar tipos de documento permitidos
+  const allowedDocumentTypes = [
+    'hojas', 'contratos', 'reportes', 'facturas', 'certificados', 
+    'documentos', 'imagenes', 'formularios', 'correspondencia'
+  ];
+  
+  if (documentType && !allowedDocumentTypes.includes(documentType.toLowerCase())) {
+    return res.status(400).json({
+      error: `Tipo de documento no válido. Tipos permitidos: ${allowedDocumentTypes.join(', ')}`
+    });
+  }
 
   // Validar título si se proporciona
   if (title && (typeof title !== 'string' || title.trim().length === 0)) {

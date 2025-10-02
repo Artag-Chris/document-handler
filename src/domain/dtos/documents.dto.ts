@@ -4,6 +4,10 @@ export interface UploadDocumentDto {
   description?: string;
   tags?: string[];
   category?: string;
+  employeeUuid: string;
+  employeeName?: string;
+  employeeCedula?: string;
+  documentType?: string;
 }
 
 export interface DocumentMetadataDto {
@@ -20,6 +24,34 @@ export interface DocumentMetadataDto {
   extractedText?: string;
   keywords?: string[];
   elasticId?: string;
+  // Datos del empleado
+  employeeUuid: string;
+  employeeName?: string;
+  employeeCedula?: string;
+  documentType?: string;
+  // Ruta del archivo
+  filePath: string;
+  relativePath: string;
+  year: number;
+}
+
+export interface ElasticsearchDocumentDto {
+  id: string;
+  title: string;
+  content: string;
+  keywords: string[];
+  tags: string[];
+  category?: string;
+  employeeUuid: string;
+  employeeName?: string;
+  employeeCedula?: string;
+  documentType: string;
+  uploadDate: Date;
+  year: number;
+  filename: string;
+  mimetype: string;
+  size: number;
+  relativePath: string;
 }
 
 export interface SearchDocumentDto {
@@ -30,4 +62,7 @@ export interface SearchDocumentDto {
   dateTo?: Date;
   size?: number;
   page?: number;
+  employeeUuid?: string;
+  documentType?: string;
+  year?: number;
 }

@@ -20,38 +20,68 @@ const storage = multer.diskStorage({
   destination: (req: Request, file: Express.Multer.File, cb: Function) => {
     try {
       // Extraer datos del empleado del body o headers
-      const employeeUuid = req.body.employeeUuid || req.headers['employee-uuid'] as string;
-      const documentType = req.body.documentType || 'documentos'; // Tipo de documento (hojas, contratos, reportes, etc.)
+      const employeeUuid = req.body?.employeeUuid || req.headers['employee-uuid'] as string;
+      const documentType = req.body?.documentType || 'documentos'; // Tipo de documento (hojas, contratos, reportes, etc.)
       
+      // Si no hay employeeUuid, crear directorio temporal
       if (!employeeUuid) {
-        return cb(new Error('Employee UUID es requerido para crear la estructura de carpetas'));
+        console.warn('⚠️ No se encontró employeeUuid, usando directorio temporal');
+        const tempPath = path.join(process.cwd(), 'uploads', 'temp');
+        if (!fs.existsSync(tempPath)) {
+          fs.mkdirSync(tempPath, { recursive: true });
+        }
+        return cb(null, tempPath);
       }
 
       // Validar formato UUID
       const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
       if (!uuidRegex.test(employeeUuid)) {
-        return cb(new Error('Formato de Employee UUID inválido'));
+        console.warn('⚠️ Formato de UUID inválido, usando directorio temporal');
+        const tempPath = path.join(process.cwd(), 'uploads', 'temp');
+        if (!fs.existsSync(tempPath)) {
+          fs.mkdirSync(tempPath, { recursive: true });
+        }
+        return cb(null, tempPath);
       }
 
       const uploadPath = createEmployeeDirectory(employeeUuid, documentType);
       cb(null, uploadPath);
     } catch (error) {
-      cb(error);
+      // En caso de error, usar directorio temporal
+      console.error('❌ Error en destination:', error);
+      const tempPath = path.join(process.cwd(), 'uploads', 'temp');
+      if (!fs.existsSync(tempPath)) {
+        fs.mkdirSync(tempPath, { recursive: true });
+      }
+      cb(null, tempPath);
     }
   },
   filename: (req: Request, file: Express.Multer.File, cb: Function) => {
     try {
-      const currentYear = new Date().getFullYear();
       const timestamp = Date.now();
-      const employeeUuid = req.body.employeeUuid || req.headers['employee-uuid'] as string;
       const extension = path.extname(file.originalname);
       const baseName = path.basename(file.originalname, extension);
       
-      // Formato: YYYY_empleadoUUID_timestamp_nombreOriginal.extension
-      const fileName = `${currentYear}_${employeeUuid.substring(0, 8)}_${timestamp}_${baseName}${extension}`;
+      // Si estamos en directorio temporal, usar nombre simple
+      const employeeUuid = req.body?.employeeUuid;
+      if (!employeeUuid) {
+        const tempFileName = `temp_${timestamp}_${baseName}${extension}`;
+        return cb(null, tempFileName);
+      }
+
+      const currentYear = new Date().getFullYear();
+      const documentType = req.body?.documentType || 'documentos';
+      const employeeCedula = req.body?.employeeCedula || employeeUuid.substring(0, 8);
+      
+      // Formato: YYYY_empleadoCedula_documentType_timestamp_nombreOriginal.extension
+      const fileName = `${currentYear}_${employeeCedula}_${documentType}_${timestamp}_${baseName}${extension}`;
       cb(null, fileName);
     } catch (error) {
-      cb(error);
+      // En caso de error, usar nombre simple con timestamp
+      const timestamp = Date.now();
+      const extension = path.extname(file.originalname);
+      const baseName = path.basename(file.originalname, extension);
+      cb(null, `temp_${timestamp}_${baseName}${extension}`);
     }
   }
 });

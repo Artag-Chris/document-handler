@@ -3,18 +3,68 @@ import path from 'path';
 import pdfParse from 'pdf-parse';
 import { v4 as uuidv4 } from 'uuid';
 import { DocumentMetadataDto, ElasticsearchDocumentDto } from '../domain/dtos/documents.dto';
+import { ElasticsearchService } from '../config/elasticsearch.service';
 
 export class DocumentsService {
   private static instance: DocumentsService;
   private documents: Map<string, DocumentMetadataDto> = new Map();
+  private elasticsearchService: ElasticsearchService;
 
-  private constructor() {}
+  private constructor() {
+    this.elasticsearchService = ElasticsearchService.getInstance();
+  }
 
   public static getInstance(): DocumentsService {
     if (!DocumentsService.instance) {
       DocumentsService.instance = new DocumentsService();
     }
     return DocumentsService.instance;
+  }
+
+  private async moveFileToCorrectLocation(file: Express.Multer.File, metadata?: {
+    employeeUuid?: string;
+    employeeCedula?: string;
+    documentType?: string;
+  }): Promise<string> {
+    // Si el archivo ya está en la ubicación correcta, no hacer nada
+    if (!file.path.includes('temp') && metadata?.employeeUuid) {
+      return file.path;
+    }
+
+    // Si no hay metadata, mantener en temp
+    if (!metadata?.employeeUuid) {
+      console.warn('⚠️ No se puede mover archivo sin employeeUuid, manteniéndolo en temp');
+      return file.path;
+    }
+
+    try {
+      const currentYear = new Date().getFullYear();
+      const documentType = metadata.documentType || 'documentos';
+      
+      // Crear directorio de destino
+      const targetDir = path.join(process.cwd(), 'uploads', currentYear.toString(), metadata.employeeUuid, documentType);
+      if (!fs.existsSync(targetDir)) {
+        fs.mkdirSync(targetDir, { recursive: true });
+      }
+
+      // Generar nuevo nombre de archivo
+      const timestamp = Date.now();
+      const extension = path.extname(file.originalname);
+      const baseName = path.basename(file.originalname, extension);
+      const employeeCedula = metadata.employeeCedula || metadata.employeeUuid.substring(0, 8);
+      const newFileName = `${currentYear}_${employeeCedula}_${documentType}_${timestamp}_${baseName}${extension}`;
+      
+      const targetPath = path.join(targetDir, newFileName);
+      
+      // Mover archivo
+      fs.renameSync(file.path, targetPath);
+      console.log(`📂 Archivo movido de ${file.path} a ${targetPath}`);
+      
+      return targetPath;
+    } catch (error) {
+      console.error('❌ Error moviendo archivo:', error);
+      return file.path; // Mantener en ubicación original si hay error
+    }
   }
 
   async uploadDocument(file: Express.Multer.File, metadata?: {
@@ -40,13 +90,20 @@ export class DocumentsService {
         keywords = this.extractKeywords(extractedText);
       }
 
+      // Mover archivo del directorio temporal al definitivo si es necesario
+      const finalFilePath = await this.moveFileToCorrectLocation(file, {
+        employeeUuid: metadata?.employeeUuid,
+        employeeCedula: metadata?.employeeCedula,
+        documentType: metadata?.documentType
+      });
+
       // Calcular ruta relativa para almacenamiento
       const currentYear = new Date().getFullYear();
-      const relativePath = path.relative(process.cwd(), file.path);
+      const relativePath = path.relative(process.cwd(), finalFilePath);
 
       const document: DocumentMetadataDto = {
         id: documentId,
-        filename: file.filename,
+        filename: path.basename(finalFilePath),
         originalName: file.originalname,
         mimetype: file.mimetype,
         size: file.size,
@@ -61,7 +118,7 @@ export class DocumentsService {
         employeeName: metadata?.employeeName,
         employeeCedula: metadata?.employeeCedula,
         documentType: metadata?.documentType || 'documentos',
-        filePath: file.path,
+        filePath: finalFilePath,
         relativePath,
         year: currentYear
       };
@@ -89,14 +146,33 @@ export class DocumentsService {
       // Guardar en memoria (en producción sería una base de datos)
       this.documents.set(documentId, document);
 
-      console.log('📄 Documento procesado para Elasticsearch:', {
+      // Intentar indexar en Elasticsearch automáticamente
+      try {
+        const elasticResult = await this.elasticsearchService.indexDocument(
+          elasticsearchData,
+          documentId,
+          `documents-${currentYear}`
+        );
+
+        if (elasticResult.success) {
+          console.log('� Documento indexado en Elasticsearch:', elasticResult.id);
+          document.elasticId = elasticResult.id;
+        } else {
+          console.warn('⚠️ No se pudo indexar en Elasticsearch:', elasticResult.error);
+        }
+      } catch (error) {
+        console.warn('⚠️ Error conectando con Elasticsearch (documento guardado localmente):', error);
+      }
+
+      console.log('📄 Documento procesado exitosamente:', {
         id: documentId,
         employeeUuid: document.employeeUuid,
         documentType: document.documentType,
         year: currentYear,
         path: relativePath,
         keywordsCount: keywords.length,
-        fileSize: document.size
+        fileSize: document.size,
+        elasticsearchIndexed: !!document.elasticId
       });
 
       return { document, elasticsearchData };
@@ -129,6 +205,14 @@ export class DocumentsService {
 
       // Eliminar de memoria
       this.documents.delete(id);
+      
+      // Intentar eliminar de Elasticsearch
+      try {
+        await this.elasticsearchService.deleteDocument(id, `documents-${document.year}`);
+        console.log(`🗑️ Documento eliminado de Elasticsearch: ${id}`);
+      } catch (error) {
+        console.warn('⚠️ Error eliminando de Elasticsearch:', error);
+      }
       
       console.log(`📋 Documento eliminado del sistema:`, {
         id,
@@ -328,5 +412,37 @@ export class DocumentsService {
     }
 
     return results;
+  }
+
+  // Métodos para Elasticsearch
+  async testElasticsearchConnection(): Promise<{ connected: boolean; info?: any; error?: string }> {
+    return await this.elasticsearchService.testConnection();
+  }
+
+  async searchInElasticsearch(query: {
+    text?: string;
+    employeeUuid?: string;
+    documentType?: string;
+    category?: string;
+    tags?: string[];
+    dateFrom?: Date;
+    dateTo?: Date;
+    size?: number;
+    from?: number;
+  }): Promise<{ documents: any[]; total: number; error?: string }> {
+    return await this.elasticsearchService.searchDocuments(query);
+  }
+
+  async updateElasticsearchConfig(config: {
+    host?: string;
+    port?: number;
+    username?: string;
+    password?: string;
+  }): Promise<void> {
+    this.elasticsearchService.updateConfig(config);
+  }
+
+  getElasticsearchConfig() {
+    return this.elasticsearchService.getConfig();
   }
 }

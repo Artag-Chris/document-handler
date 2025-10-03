@@ -335,6 +335,36 @@ export class ElasticsearchService {
     }
   }
 
+  // Buscar documento por ID exacto
+  async getDocumentById(documentId: string, indexName?: string): Promise<any | null> {
+    const index = indexName || this.config.index;
+    
+    try {
+      const response = await this.client.get({
+        index,
+        id: documentId
+      });
+
+      if (response.found) {
+        return {
+          id: response._id,
+          ...(response._source as any)
+        };
+      }
+      
+      return null;
+    } catch (error) {
+      // Si el documento no existe, Elasticsearch lanza error 404
+      if ((error as any).statusCode === 404) {
+        console.log(`📄 Documento con ID ${documentId} no encontrado en Elasticsearch`);
+        return null;
+      }
+      
+      console.error('❌ Error buscando documento por ID:', error);
+      return null;
+    }
+  }
+
   // Obtener estadísticas del índice
   async getIndexStats(indexName?: string): Promise<any> {
     const index = indexName || this.config.index;
@@ -351,5 +381,289 @@ export class ElasticsearchService {
   // Obtener configuración actual
   getConfig(): ElasticsearchConfig {
     return { ...this.config };
+  }
+
+  // Búsqueda avanzada por contenido y palabras clave
+  async advancedSearch(params: {
+    query?: string;
+    keywords?: string[];
+    content?: string;
+    fuzzy?: boolean;
+    boost?: boolean;
+    size?: number;
+    from?: number;
+    filters?: {
+      category?: string;
+      documentType?: string;
+      employeeUuid?: string;
+      dateRange?: { from?: Date; to?: Date };
+      fileType?: string;
+    };
+    sortBy?: 'relevance' | 'date' | 'size' | 'filename';
+    sortOrder?: 'asc' | 'desc';
+  }, indexName?: string): Promise<{
+    documents: any[];
+    total: number;
+    took: number;
+    aggregations?: any;
+  }> {
+    const index = indexName || this.config.index;
+
+    try {
+      const searchBody: any = {
+        size: params.size || 10,
+        from: params.from || 0,
+        query: {
+          bool: {
+            must: [],
+            filter: [],
+            should: []
+          }
+        },
+        highlight: {
+          fields: {
+            content: {
+              fragment_size: 150,
+              number_of_fragments: 3
+            },
+            title: {},
+            keywords: {}
+          }
+        },
+        // Agregaciones para estadísticas
+        aggs: {
+          categories: {
+            terms: { field: "category.keyword", size: 10 }
+          },
+          documentTypes: {
+            terms: { field: "documentType.keyword", size: 10 }
+          },
+          employees: {
+            terms: { field: "employeeName.keyword", size: 10 }
+          },
+          fileTypes: {
+            terms: { field: "mimetype.keyword", size: 10 }
+          },
+          dateHistogram: {
+            date_histogram: {
+              field: "uploadDate",
+              calendar_interval: "month"
+            }
+          }
+        }
+      };
+
+      // Búsqueda por texto general
+      if (params.query) {
+        if (params.fuzzy) {
+          // Búsqueda fuzzy para errores tipográficos
+          searchBody.query.bool.should.push({
+            multi_match: {
+              query: params.query,
+              fields: ["title^3", "content^2", "keywords^2", "filename"],
+              fuzziness: "AUTO",
+              boost: params.boost ? 2 : 1
+            }
+          });
+        } else {
+          // Búsqueda exacta con boost
+          searchBody.query.bool.should.push({
+            multi_match: {
+              query: params.query,
+              fields: ["title^3", "content^2", "keywords^2", "filename"],
+              type: "best_fields",
+              boost: params.boost ? 2 : 1
+            }
+          });
+        }
+      }
+
+      // Búsqueda específica por contenido
+      if (params.content) {
+        searchBody.query.bool.must.push({
+          match: {
+            content: {
+              query: params.content,
+              boost: 2
+            }
+          }
+        });
+      }
+
+      // Búsqueda por palabras clave específicas
+      if (params.keywords && params.keywords.length > 0) {
+        searchBody.query.bool.should.push({
+          terms: {
+            "keywords.keyword": params.keywords,
+            boost: 1.5
+          }
+        });
+      }
+
+      // Aplicar filtros
+      if (params.filters) {
+        if (params.filters.category) {
+          searchBody.query.bool.filter.push({
+            term: { "category.keyword": params.filters.category }
+          });
+        }
+
+        if (params.filters.documentType) {
+          searchBody.query.bool.filter.push({
+            term: { "documentType.keyword": params.filters.documentType }
+          });
+        }
+
+        if (params.filters.employeeUuid) {
+          searchBody.query.bool.filter.push({
+            term: { "employeeUuid.keyword": params.filters.employeeUuid }
+          });
+        }
+
+        if (params.filters.fileType) {
+          searchBody.query.bool.filter.push({
+            term: { "mimetype.keyword": params.filters.fileType }
+          });
+        }
+
+        if (params.filters.dateRange) {
+          const dateFilter: any = { range: { uploadDate: {} } };
+          if (params.filters.dateRange.from) {
+            dateFilter.range.uploadDate.gte = params.filters.dateRange.from;
+          }
+          if (params.filters.dateRange.to) {
+            dateFilter.range.uploadDate.lte = params.filters.dateRange.to;
+          }
+          searchBody.query.bool.filter.push(dateFilter);
+        }
+      }
+
+      // Configurar ordenamiento
+      if (params.sortBy) {
+        const sortOrder = params.sortOrder || 'desc';
+        switch (params.sortBy) {
+          case 'date':
+            searchBody.sort = [{ uploadDate: { order: sortOrder } }];
+            break;
+          case 'size':
+            searchBody.sort = [{ size: { order: sortOrder } }];
+            break;
+          case 'filename':
+            searchBody.sort = [{ "filename.keyword": { order: sortOrder } }];
+            break;
+          case 'relevance':
+          default:
+            // Elasticsearch usa relevancia por defecto
+            break;
+        }
+      }
+
+      // Si no hay condiciones must o should, buscar todo
+      if (searchBody.query.bool.must.length === 0 && searchBody.query.bool.should.length === 0) {
+        searchBody.query = { match_all: {} };
+      }
+
+      console.log('🔍 Elasticsearch query:', JSON.stringify(searchBody, null, 2));
+
+      const response = await this.client.search({
+        index,
+        body: searchBody
+      });
+
+      const documents = response.hits.hits.map((hit: any) => ({
+        id: hit._id,
+        score: hit._score,
+        highlights: hit.highlight,
+        ...hit._source
+      }));
+
+      return {
+        documents,
+        total: typeof response.hits.total === 'object' 
+          ? response.hits.total?.value || 0
+          : response.hits.total || 0,
+        took: response.took,
+        aggregations: response.aggregations
+      };
+
+    } catch (error) {
+      console.error('❌ Error en búsqueda avanzada:', error);
+      throw error;
+    }
+  }
+
+  // Búsqueda de autocompletado
+  async suggest(params: {
+    text: string;
+    field?: 'title' | 'keywords' | 'content';
+    size?: number;
+  }, indexName?: string): Promise<string[]> {
+    const index = indexName || this.config.index;
+    const field = params.field || 'title';
+    
+    try {
+      const response = await this.client.search({
+        index,
+        body: {
+          size: 0,
+          suggest: {
+            suggestions: {
+              text: params.text,
+              term: {
+                field: field,
+                size: params.size || 5
+              }
+            }
+          }
+        }
+      });
+
+      const suggestions = response.suggest?.suggestions as any;
+      return suggestions?.[0]?.options?.map?.((option: any) => option.text) || [];
+    } catch (error) {
+      console.error('❌ Error en sugerencias:', error);
+      return [];
+    }
+  }
+
+  // Búsqueda similar a un documento específico
+  async findSimilar(documentId: string, params: {
+    size?: number;
+    minScore?: number;
+  } = {}, indexName?: string): Promise<any[]> {
+    const index = indexName || this.config.index;
+
+    try {
+      const response = await this.client.search({
+        index,
+        body: {
+          size: params.size || 5,
+          min_score: params.minScore || 0.5,
+          query: {
+            more_like_this: {
+              fields: ['title', 'content', 'keywords'],
+              like: [
+                {
+                  _index: index,
+                  _id: documentId
+                }
+              ],
+              min_term_freq: 1,
+              max_query_terms: 12
+            }
+          }
+        }
+      });
+
+      return response.hits.hits.map((hit: any) => ({
+        id: hit._id,
+        score: hit._score,
+        ...hit._source
+      }));
+
+    } catch (error) {
+      console.error('❌ Error buscando documentos similares:', error);
+      return [];
+    }
   }
 }

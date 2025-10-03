@@ -53,6 +53,13 @@ export class DocumentsController {
         body: result.elasticsearchData
       });
 
+      // Generar URLs de descarga
+      const baseUrl = `${req.protocol}://${req.get('host')}`;
+      const downloadUrls = {
+        downloadUrl: `${baseUrl}/api/retrieval/download/${result.document.id}`,
+        viewUrl: `${baseUrl}/api/retrieval/view/${result.document.id}`
+      };
+
       res.status(201).json({
         message: 'Documento subido exitosamente',
         document: {
@@ -71,7 +78,8 @@ export class DocumentsController {
           employeeCedula: result.document.employeeCedula,
           documentType: result.document.documentType,
           year: result.document.year,
-          relativePath: result.document.relativePath
+          relativePath: result.document.relativePath,
+          ...downloadUrls
         },
         elasticsearchData: result.elasticsearchData,
         indexInfo: {

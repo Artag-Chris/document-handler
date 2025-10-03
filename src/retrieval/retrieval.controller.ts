@@ -6,6 +6,15 @@ export class RetrievalController {
     private readonly retrievalService: RetrievalService = RetrievalService.getInstance()
   ) {}
 
+  // Función auxiliar para generar URLs de descarga
+  private generateDownloadUrls(documentId: string, req: Request) {
+    const baseUrl = `${req.protocol}://${req.get('host')}`;
+    return {
+      downloadUrl: `${baseUrl}/api/retrieval/download/${documentId}`,
+      viewUrl: `${baseUrl}/api/retrieval/view/${documentId}`
+    };
+  }
+
   downloadDocument = async (req: Request, res: Response) => {
     try {
       const { id } = req.params;
@@ -82,20 +91,28 @@ export class RetrievalController {
       const documents = await this.retrievalService.searchAndRetrieve(searchQuery);
 
       res.json({
-        documents: documents.map(doc => ({
-          id: doc.id,
-          title: doc.title,
-          filename: doc.filename,
-          originalName: doc.originalName,
-          size: doc.size,
-          mimetype: doc.mimetype,
-          uploadDate: doc.uploadDate,
-          description: doc.description,
-          category: doc.category,
-          tags: doc.tags,
-          keywords: doc.keywords,
-          ...(searchQuery.includeContent && { extractedText: doc.extractedText })
-        })),
+        documents: documents.map(doc => {
+          const urls = this.generateDownloadUrls(doc.id, req);
+          return {
+            id: doc.id,
+            title: doc.title,
+            filename: doc.filename,
+            originalName: doc.originalName,
+            size: doc.size,
+            mimetype: doc.mimetype,
+            uploadDate: doc.uploadDate,
+            description: doc.description,
+            category: doc.category,
+            tags: doc.tags,
+            keywords: doc.keywords,
+            employeeUuid: doc.employeeUuid,
+            employeeName: doc.employeeName,
+            documentType: doc.documentType,
+            downloadUrl: urls.downloadUrl,
+            viewUrl: urls.viewUrl,
+            ...(searchQuery.includeContent && { extractedText: doc.extractedText })
+          };
+        }),
         count: documents.length,
         query: searchQuery
       });
@@ -107,6 +124,268 @@ export class RetrievalController {
     }
   };
 
+  // Búsqueda avanzada por contenido y palabras clave
+  advancedSearch = async (req: Request, res: Response) => {
+    try {
+      const {
+        query,
+        keywords,
+        content,
+        fuzzy,
+        boost,
+        size,
+        from,
+        category,
+        documentType,
+        employeeUuid,
+        dateFrom,
+        dateTo,
+        fileType,
+        sortBy,
+        sortOrder
+      } = req.query;
+
+      const searchParams = {
+        query: query as string,
+        keywords: keywords ? (Array.isArray(keywords) ? keywords as string[] : [keywords as string]) : undefined,
+        content: content as string,
+        fuzzy: fuzzy === 'true',
+        boost: boost === 'true',
+        size: size ? parseInt(size as string) : 10,
+        from: from ? parseInt(from as string) : 0,
+        filters: {
+          category: category as string,
+          documentType: documentType as string,
+          employeeUuid: employeeUuid as string,
+          fileType: fileType as string,
+          dateRange: (dateFrom || dateTo) ? {
+            from: dateFrom ? new Date(dateFrom as string) : undefined,
+            to: dateTo ? new Date(dateTo as string) : undefined
+          } : undefined
+        },
+        sortBy: sortBy as 'relevance' | 'date' | 'size' | 'filename',
+        sortOrder: sortOrder as 'asc' | 'desc'
+      };
+
+      const result = await this.retrievalService.advancedSearch(searchParams);
+
+      res.json({
+        documents: result.documents.map(doc => {
+          const urls = this.generateDownloadUrls(doc.id, req);
+          return {
+            id: doc.id,
+            title: doc.title,
+            filename: doc.filename,
+            originalName: doc.originalName,
+            size: doc.size,
+            mimetype: doc.mimetype,
+            uploadDate: doc.uploadDate,
+            description: doc.description,
+            category: doc.category,
+            tags: doc.tags,
+            keywords: doc.keywords,
+            employeeUuid: doc.employeeUuid,
+            employeeName: doc.employeeName,
+            documentType: doc.documentType,
+            downloadUrl: urls.downloadUrl,
+            viewUrl: urls.viewUrl,
+            score: doc.score,
+            highlights: doc.highlights
+          };
+        }),
+        total: result.total,
+        took: result.took,
+        facets: result.facets,
+        query: searchParams
+      });
+    } catch (error) {
+      console.error('Error in advancedSearch:', error);
+      res.status(500).json({
+        error: 'Error interno del servidor en búsqueda avanzada'
+      });
+    }
+  };
+
+  // Búsqueda por palabras clave específicas
+  searchByKeywords = async (req: Request, res: Response) => {
+    try {
+      const { keywords, size, from, exactMatch, boost } = req.query;
+
+      if (!keywords) {
+        return res.status(400).json({
+          error: 'Se requiere al menos una palabra clave'
+        });
+      }
+
+      const keywordList = Array.isArray(keywords) ? keywords as string[] : [keywords as string];
+      
+      const result = await this.retrievalService.searchByKeywords(keywordList, {
+        size: size ? parseInt(size as string) : 10,
+        from: from ? parseInt(from as string) : 0,
+        exactMatch: exactMatch === 'true',
+        boost: boost === 'true'
+      });
+
+      res.json({
+        documents: result.documents.map(doc => {
+          const urls = this.generateDownloadUrls(doc.id, req);
+          return {
+            id: doc.id,
+            title: doc.title,
+            filename: doc.filename,
+            originalName: doc.originalName,
+            size: doc.size,
+            mimetype: doc.mimetype,
+            uploadDate: doc.uploadDate,
+            category: doc.category,
+            tags: doc.tags,
+            keywords: doc.keywords,
+            employeeUuid: doc.employeeUuid,
+            employeeName: doc.employeeName,
+            documentType: doc.documentType,
+            downloadUrl: urls.downloadUrl,
+            viewUrl: urls.viewUrl,
+            score: doc.score
+          };
+        }),
+        total: result.total,
+        matchedKeywords: result.matchedKeywords,
+        searchedKeywords: keywordList
+      });
+    } catch (error) {
+      console.error('Error in searchByKeywords:', error);
+      res.status(500).json({
+        error: 'Error interno del servidor en búsqueda por palabras clave'
+      });
+    }
+  };
+
+  // Búsqueda por contenido completo
+  searchByContent = async (req: Request, res: Response) => {
+    try {
+      const { content, size, from, fuzzy, highlight } = req.query;
+
+      if (!content) {
+        return res.status(400).json({
+          error: 'Se requiere texto de contenido para buscar'
+        });
+      }
+
+      const result = await this.retrievalService.searchByContent(content as string, {
+        size: size ? parseInt(size as string) : 10,
+        from: from ? parseInt(from as string) : 0,
+        fuzzy: fuzzy === 'true',
+        highlight: highlight === 'true'
+      });
+
+      res.json({
+        documents: result.documents.map(doc => {
+          const urls = this.generateDownloadUrls(doc.id, req);
+          return {
+            id: doc.id,
+            title: doc.title,
+            filename: doc.filename,
+            originalName: doc.originalName,
+            size: doc.size,
+            mimetype: doc.mimetype,
+            uploadDate: doc.uploadDate,
+            category: doc.category,
+            tags: doc.tags,
+            keywords: doc.keywords,
+            employeeUuid: doc.employeeUuid,
+            employeeName: doc.employeeName,
+            documentType: doc.documentType,
+            downloadUrl: urls.downloadUrl,
+            viewUrl: urls.viewUrl,
+            score: doc.score,
+            highlights: doc.highlights
+          };
+        }),
+        total: result.total,
+        searchTerm: content,
+        highlights: result.highlights
+      });
+    } catch (error) {
+      console.error('Error in searchByContent:', error);
+      res.status(500).json({
+        error: 'Error interno del servidor en búsqueda por contenido'
+      });
+    }
+  };
+
+  // Sugerencias de autocompletado
+  getSuggestions = async (req: Request, res: Response) => {
+    try {
+      const { text, field, size } = req.query;
+
+      if (!text) {
+        return res.status(400).json({
+          error: 'Se requiere texto para generar sugerencias'
+        });
+      }
+
+      const suggestions = await this.retrievalService.getSearchSuggestions({
+        text: text as string,
+        field: field as 'title' | 'keywords' | 'content',
+        size: size ? parseInt(size as string) : 5
+      });
+
+      res.json({
+        suggestions,
+        searchTerm: text
+      });
+    } catch (error) {
+      console.error('Error in getSuggestions:', error);
+      res.status(500).json({
+        error: 'Error interno del servidor al generar sugerencias'
+      });
+    }
+  };
+
+  // Documentos similares
+  findSimilar = async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+      const { size, minScore } = req.query;
+
+      const similarDocuments = await this.retrievalService.findSimilarDocuments(id, {
+        size: size ? parseInt(size as string) : 5,
+        minScore: minScore ? parseFloat(minScore as string) : 0.5
+      });
+
+      res.json({
+        similarDocuments: similarDocuments.map(doc => {
+          const urls = this.generateDownloadUrls(doc.id, req);
+          return {
+            id: doc.id,
+            title: doc.title,
+            filename: doc.filename,
+            originalName: doc.originalName,
+            size: doc.size,
+            mimetype: doc.mimetype,
+            uploadDate: doc.uploadDate,
+            category: doc.category,
+            tags: doc.tags,
+            keywords: doc.keywords,
+            employeeUuid: doc.employeeUuid,
+            employeeName: doc.employeeName,
+            documentType: doc.documentType,
+            downloadUrl: urls.downloadUrl,
+            viewUrl: urls.viewUrl,
+            score: doc.score
+          };
+        }),
+        count: similarDocuments.length,
+        referenceDocumentId: id
+      });
+    } catch (error) {
+      console.error('Error in findSimilar:', error);
+      res.status(500).json({
+        error: 'Error interno del servidor al buscar documentos similares'
+      });
+    }
+  };
+
   getDocumentsByCategory = async (req: Request, res: Response) => {
     try {
       const { category } = req.params;
@@ -114,17 +393,25 @@ export class RetrievalController {
 
       res.json({
         category,
-        documents: documents.map(doc => ({
-          id: doc.id,
-          title: doc.title,
-          filename: doc.filename,
-          originalName: doc.originalName,
-          size: doc.size,
-          mimetype: doc.mimetype,
-          uploadDate: doc.uploadDate,
-          tags: doc.tags,
-          keywords: doc.keywords
-        })),
+        documents: documents.map(doc => {
+          const urls = this.generateDownloadUrls(doc.id, req);
+          return {
+            id: doc.id,
+            title: doc.title,
+            filename: doc.filename,
+            originalName: doc.originalName,
+            size: doc.size,
+            mimetype: doc.mimetype,
+            uploadDate: doc.uploadDate,
+            tags: doc.tags,
+            keywords: doc.keywords,
+            employeeUuid: doc.employeeUuid,
+            employeeName: doc.employeeName,
+            documentType: doc.documentType,
+            downloadUrl: urls.downloadUrl,
+            viewUrl: urls.viewUrl
+          };
+        }),
         count: documents.length
       });
     } catch (error) {

@@ -123,8 +123,16 @@ export class ElasticsearchController {
         });
       }
 
+      // Agregar URLs de descarga a cada documento
+      const baseUrl = `${req.protocol}://${req.get('host')}`;
+      const documentsWithUrls = result.documents.map((doc: any) => ({
+        ...doc,
+        downloadUrl: `${baseUrl}/api/retrieval/download/${doc.id}`,
+        viewUrl: `${baseUrl}/api/retrieval/view/${doc.id}`
+      }));
+
       res.json({
-        documents: result.documents,
+        documents: documentsWithUrls,
         total: result.total,
         query: searchQuery,
         pagination: {

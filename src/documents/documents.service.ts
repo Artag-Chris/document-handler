@@ -21,6 +21,11 @@ export class DocumentsService {
     return DocumentsService.instance;
   }
 
+  // Método para acceder al servicio de Elasticsearch
+  public getElasticsearchService(): ElasticsearchService {
+    return this.elasticsearchService;
+  }
+
   private async moveFileToCorrectLocation(file: Express.Multer.File, metadata?: {
     employeeUuid?: string;
     employeeCedula?: string;
@@ -431,6 +436,10 @@ export class DocumentsService {
     from?: number;
   }): Promise<{ documents: any[]; total: number; error?: string }> {
     return await this.elasticsearchService.searchDocuments(query);
+  }
+
+  async getDocumentByIdFromElasticsearch(documentId: string, indexName?: string): Promise<any | null> {
+    return await this.elasticsearchService.getDocumentById(documentId, indexName);
   }
 
   async updateElasticsearchConfig(config: {

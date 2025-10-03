@@ -33,6 +33,9 @@ export interface DocumentMetadataDto {
   filePath: string;
   relativePath: string;
   year: number;
+  // Campos opcionales para búsqueda
+  score?: number;
+  highlights?: any;
 }
 
 export interface ElasticsearchDocumentDto {

@@ -16,8 +16,7 @@ export class AppRoutes {
     router.use(`/api/documents`, DocumentsRoutes.routes)
     router.use(`/api/retrieval`, RetrievalRoutes.routes)
     router.use(`/api/elasticsearch`, ElasticsearchRoutes.routes)
-    //  router.use(`/api/prisma`, PrismaRoutes.routes);
-    // aqui colocare la nueva ruta para el manejo del email
+
  
 
     return router;

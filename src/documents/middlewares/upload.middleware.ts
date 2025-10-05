@@ -2,6 +2,7 @@ import multer, { FileFilterCallback } from 'multer';
 import path from 'path';
 import { Request } from 'express';
 import fs from 'fs';
+import { isValidUUID } from '../../config/uuid.utils';
 
 // Función para crear la estructura de directorios basada en empleado
 const createEmployeeDirectory = (employeeUuid: string, documentType: string = 'documentos') => {
@@ -33,9 +34,8 @@ const storage = multer.diskStorage({
         return cb(null, tempPath);
       }
 
-      // Validar formato UUID
-      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-      if (!uuidRegex.test(employeeUuid)) {
+      // Validar formato UUID (todas las versiones)
+      if (!isValidUUID(employeeUuid)) {
         console.warn('⚠️ Formato de UUID inválido, usando directorio temporal');
         const tempPath = path.join(process.cwd(), 'uploads', 'temp');
         if (!fs.existsSync(tempPath)) {
@@ -110,8 +110,8 @@ const fileFilter = (req: Request, file: Express.Multer.File, cb: FileFilterCallb
 export const uploadMiddleware = multer({
   storage: storage,
   limits: {
-    fileSize: 100 * 1024 * 1024, // 100MB
-    files: 5 // máximo 5 archivos por request
+    fileSize: 1024 * 1024 * 1024, // 1GB - sin límite práctico
+    files: 10 // máximo 10 archivos por request
   },
   fileFilter: fileFilter
 });

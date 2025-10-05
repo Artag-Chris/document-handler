@@ -7,7 +7,14 @@ export class DocumentsController {
   ) {}
 
   uploadDocument = async (req: Request, res: Response) => {
+    console.log('📁 Received uploadDocument request');
+    console.log(req.body);
     try {
+      // Asegurar headers CORS en la respuesta
+      res.header('Access-Control-Allow-Origin', '*');
+      res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+      res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, Content-Disposition');
+      
       if (!req.file) {
         return res.status(400).json({
           error: 'No se ha proporcionado ningún archivo'
@@ -90,8 +97,15 @@ export class DocumentsController {
       });
     } catch (error) {
       console.error('Error in uploadDocument:', error);
+      
+      // Asegurar headers CORS también en error responses
+      res.header('Access-Control-Allow-Origin', '*');
+      res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+      res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, Content-Disposition');
+      
       res.status(500).json({
-        error: 'Error interno del servidor al subir el documento'
+        error: 'Error interno del servidor al subir el documento',
+        details: process.env.NODE_ENV === 'development' ? error : undefined
       });
     }
   };

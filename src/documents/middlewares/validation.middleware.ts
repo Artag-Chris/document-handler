@@ -1,4 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
+import { isValidUUID } from '../../config/uuid.utils';
 
 export const validateDocumentUpload = (req: Request, res: Response, next: NextFunction) => {
   if (!req.file) {
@@ -7,11 +8,11 @@ export const validateDocumentUpload = (req: Request, res: Response, next: NextFu
     });
   }
 
-  // Validar tamaño del archivo (100MB máximo)
-  const maxSize = 100 * 1024 * 1024; // 100MB
+  // Validar tamaño del archivo (1GB máximo - muy permisivo)
+  const maxSize = 1024 * 1024 * 1024; // 1GB
   if (req.file.size > maxSize) {
     return res.status(400).json({
-      error: 'El archivo es demasiado grande. Máximo permitido: 100MB'
+      error: 'El archivo es demasiado grande. Máximo permitido: 1GB'
     });
   }
 
@@ -32,19 +33,19 @@ export const validateMultipleDocumentUpload = (req: Request, res: Response, next
     });
   }
 
-  const maxFiles = 5;
+  const maxFiles = 10; // Aumentado de 5 a 10
   if (req.files.length > maxFiles) {
     return res.status(400).json({
       error: `Máximo ${maxFiles} archivos permitidos por operación`
     });
   }
 
-  const maxSize = 100 * 1024 * 1024; // 100MB por archivo
+  const maxSize = 1024 * 1024 * 1024; // 1GB por archivo
   const oversizedFiles = req.files.filter(file => file.size > maxSize);
   
   if (oversizedFiles.length > 0) {
     return res.status(400).json({
-      error: 'Uno o más archivos exceden el tamaño máximo de 100MB'
+      error: 'Uno o más archivos exceden el tamaño máximo de 1GB'
     });
   }
 
@@ -77,11 +78,10 @@ export const validateDocumentMetadata = (req: Request, res: Response, next: Next
     });
   }
 
-  // Validar formato UUID
-  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-  if (!uuidRegex.test(employeeUuid)) {
+  // Validar formato UUID (todas las versiones)
+  if (!isValidUUID(employeeUuid)) {
     return res.status(400).json({
-      error: 'Formato de employeeUuid inválido'
+      error: 'Formato de employeeUuid inválido. Debe ser un UUID válido (ej: 3389ecbe-a18c-11f0-99f3-0242ac120002)'
     });
   }
 

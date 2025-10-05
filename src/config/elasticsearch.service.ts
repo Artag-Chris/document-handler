@@ -1,4 +1,5 @@
 import { Client } from '@elastic/elasticsearch';
+import { envs } from './envs';
 
 export interface ElasticsearchConfig {
   host: string;
@@ -15,20 +16,24 @@ export class ElasticsearchService {
   private config: ElasticsearchConfig;
 
   private constructor() {
-    // Configuración por defecto - ajusta según tu setup
+    // Configuración desde variables de entorno para Docker
     this.config = {
-      host: 'localhost',
-      port: 9200, // Puerto estándar, puede ser diferente en tu Docker
+      host: envs.ELASTICSEARCH_HOST, // 'elasticsearch' por defecto (nombre del contenedor)
+      port: envs.ELASTICSEARCH_PORT, // 9200 por defecto
+      username: envs.ELASTICSEARCH_USERNAME,
+      password: envs.ELASTICSEARCH_PASSWORD,
       index: `documents-${new Date().getFullYear()}`
     };
 
+    console.log(`🔧 Configurando Elasticsearch: ${this.config.host}:${this.config.port}`);
+
     this.client = new Client({
-      node: `http://${this.config.host}:${this.config.port}`,
+      node: `http://${this.config.host}:${this.config.port}`, // HTTP ya que xpack.security.enabled=false
       auth: this.config.username && this.config.password ? {
         username: this.config.username,
         password: this.config.password
       } : undefined,
-      // Configuración simplificada para Elasticsearch 8.x
+      // Configuración simplificada para Elasticsearch 8.x en Docker
       requestTimeout: 30000,
       pingTimeout: 3000
     });
@@ -45,12 +50,12 @@ export class ElasticsearchService {
   public updateConfig(newConfig: Partial<ElasticsearchConfig>) {
     this.config = { ...this.config, ...newConfig };
     this.client = new Client({
-      node: `http://${this.config.host}:${this.config.port}`,
+      node: `http://${this.config.host}:${this.config.port}`, // HTTP para Docker local
       auth: this.config.username && this.config.password ? {
         username: this.config.username,
         password: this.config.password
       } : undefined,
-      // Configuración simplificada para Elasticsearch 8.x
+      // Configuración simplificada para Elasticsearch 8.x en Docker
       requestTimeout: 30000,
       pingTimeout: 3000
     });

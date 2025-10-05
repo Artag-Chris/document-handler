@@ -11,19 +11,22 @@ export class ElasticsearchController {
   // Probar conexión con Elasticsearch
   testConnection = async (req: Request, res: Response) => {
     try {
-      const result = await this.documentsService.testElasticsearchConnection();
+      // Primero probar conexión directa con el servicio
+      const connectionResult = await this.elasticsearchService.testConnection();
       
-      if (result.connected) {
+      if (connectionResult.connected) {
         res.json({
           message: 'Conexión exitosa con Elasticsearch',
           status: 'connected',
-          info: result.info
+          config: this.elasticsearchService.getConfig(),
+          info: connectionResult.info
         });
       } else {
         res.status(503).json({
           message: 'No se pudo conectar con Elasticsearch',
           status: 'disconnected',
-          error: result.error
+          config: this.elasticsearchService.getConfig(),
+          error: connectionResult.error
         });
       }
     } catch (error) {

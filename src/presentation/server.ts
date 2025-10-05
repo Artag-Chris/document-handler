@@ -27,11 +27,43 @@ export class Server {
   }
 
   private configure() {
+    // Configuración CORS mejorada para manejar preflight requests
     this.app.use(cors({
       origin: '*',
-      methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-      allowedHeaders: ['Content-Type', 'Authorization', 'Content-Disposition']
+      methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+      allowedHeaders: [
+        'Content-Type', 
+        'Authorization', 
+        'Content-Disposition',
+        'x-finova-api-key',
+        'x-finovaClient-id',
+        'Accept',
+        'Origin',
+        'X-Requested-With'
+      ],
+      exposedHeaders: ['Content-Disposition'],
+      credentials: false,
+      optionsSuccessStatus: 200 // Para browsers antiguos
     }));
+
+    // Middleware adicional para asegurar headers CORS en todas las responses
+    this.app.use((req, res, next) => {
+      const origin = req.headers.origin;
+      console.log(`🌐 Request from origin: ${origin} to ${req.method} ${req.path}`);
+      
+      res.header('Access-Control-Allow-Origin', '*');
+      res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH');
+      res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, Content-Disposition, x-finova-api-key, x-finovaClient-id, Accept, Origin, X-Requested-With');
+      res.header('Access-Control-Expose-Headers', 'Content-Disposition');
+      
+      // Responder a preflight requests
+      if (req.method === 'OPTIONS') {
+        console.log(`✅ Handling OPTIONS preflight request for ${req.path}`);
+        res.status(200).end();
+        return;
+      }
+      next();
+    });
     
     this.app.use(express.json({ limit: this.maxFileSize }));
     this.app.use(express.urlencoded({ limit: this.maxFileSize, extended: true }));

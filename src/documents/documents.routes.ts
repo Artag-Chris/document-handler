@@ -6,11 +6,15 @@ import {
   validateMultipleDocumentUpload, 
   validateDocumentMetadata 
 } from './middlewares/validation.middleware';
+import { corsMiddleware } from './middlewares/cors.middleware';
 
 export class DocumentsRoutes {
   static get routes(): Router {
     const router = Router();
     const documentsController = new DocumentsController();
+
+    // Aplicar middleware CORS a todas las rutas
+    router.use(corsMiddleware);
 
     // Subir un solo documento
     router.post('/upload', 

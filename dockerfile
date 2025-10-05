@@ -1,5 +1,5 @@
 # Usa una imagen base de Node.js en su versión 21-alpine3.19
-FROM node:22
+FROM node:23
 
 # Establece el directorio de trabajo dentro del contenedor
 WORKDIR /usr/src/app
@@ -16,5 +16,5 @@ RUN npm install
 COPY . .
 
 # Expone el puerto 35715
-EXPOSE 4000
+EXPOSE 6133
 

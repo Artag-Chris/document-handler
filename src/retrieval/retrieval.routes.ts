@@ -4,7 +4,8 @@ import {
   validateDocumentId, 
   validateSearchQuery, 
   validateCategory, 
-  validateTags 
+  validateTags,
+  validateEmployeeUuid 
 } from './middlewares/validation.middleware';
 
 export class RetrievalRoutes {
@@ -14,6 +15,13 @@ export class RetrievalRoutes {
 
     // Buscar documentos (búsqueda básica)
     router.get('/search', validateSearchQuery, retrievalController.searchDocuments);
+
+    // NUEVAS RUTAS: Búsqueda específica por empleado UUID
+    // Obtener todos los documentos de un empleado específico
+    router.get('/employee/:employeeUuid', validateEmployeeUuid, retrievalController.getDocumentsByEmployee);
+
+    // Buscar dentro de los documentos de un empleado específico
+    router.get('/employee/:employeeUuid/search', validateEmployeeUuid, retrievalController.searchInEmployeeDocuments);
 
     // Búsqueda avanzada con filtros y ordenamiento
     router.get('/advanced-search', retrievalController.advancedSearch);

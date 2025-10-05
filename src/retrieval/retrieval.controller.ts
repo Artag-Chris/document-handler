@@ -489,6 +489,166 @@ export class RetrievalController {
     }
   };
 
+  // NUEVOS MÉTODOS: Búsqueda específica por empleado UUID
+  
+  getDocumentsByEmployee = async (req: Request, res: Response) => {
+    try {
+      const { employeeUuid } = req.params;
+      const { page = '1', limit = '20', sortBy = 'uploadDate', sortOrder = 'desc' } = req.query;
+
+      console.log(`🔍 Obteniendo documentos del empleado: ${employeeUuid}`);
+
+      const documents = await this.retrievalService.getDocumentsByEmployeeUuid(
+        employeeUuid,
+        {
+          page: parseInt(page as string),
+          limit: parseInt(limit as string),
+          sortBy: sortBy as string,
+          sortOrder: sortOrder as 'asc' | 'desc'
+        }
+      );
+
+      res.json({
+        employeeUuid,
+        documents: documents.map(doc => {
+          const urls = this.generateDownloadUrls(doc.id, req);
+          return {
+            id: doc.id,
+            title: doc.title,
+            filename: doc.filename,
+            originalName: doc.originalName,
+            size: doc.size,
+            mimetype: doc.mimetype,
+            uploadDate: doc.uploadDate,
+            description: doc.description,
+            category: doc.category,
+            tags: doc.tags,
+            keywords: doc.keywords,
+            employeeUuid: doc.employeeUuid,
+            employeeName: doc.employeeName,
+            employeeCedula: doc.employeeCedula,
+            documentType: doc.documentType,
+            year: doc.year,
+            downloadUrl: urls.downloadUrl,
+            viewUrl: urls.viewUrl
+          };
+        }),
+        pagination: {
+          page: parseInt(page as string),
+          limit: parseInt(limit as string),
+          total: documents.length
+        },
+        meta: {
+          employeeInfo: documents.length > 0 ? {
+            employeeName: documents[0].employeeName,
+            employeeCedula: documents[0].employeeCedula
+          } : null
+        }
+      });
+    } catch (error) {
+      console.error('Error in getDocumentsByEmployee:', error);
+      res.status(500).json({
+        error: 'Error interno del servidor al obtener documentos del empleado'
+      });
+    }
+  };
+
+  searchInEmployeeDocuments = async (req: Request, res: Response) => {
+    try {
+      const { employeeUuid } = req.params;
+      const { 
+        text, 
+        category, 
+        tags, 
+        documentType,
+        dateFrom, 
+        dateTo, 
+        includeContent = 'false',
+        page = '1',
+        limit = '20',
+        sortBy = 'relevance'
+      } = req.query;
+
+      console.log(`🔍 Buscando en documentos del empleado: ${employeeUuid}, query: ${text}`);
+
+      if (!text && !category && !tags && !documentType && !dateFrom && !dateTo) {
+        return res.status(400).json({
+          error: 'Debe proporcionar al menos un parámetro de búsqueda (text, category, tags, documentType, dateFrom, dateTo)'
+        });
+      }
+
+      const searchQuery = {
+        text: text as string,
+        employeeUuid,
+        category: category as string,
+        documentType: documentType as string,
+        tags: tags ? (Array.isArray(tags) ? tags as string[] : [tags as string]) : undefined,
+        dateFrom: dateFrom ? new Date(dateFrom as string) : undefined,
+        dateTo: dateTo ? new Date(dateTo as string) : undefined,
+        size: parseInt(limit as string),
+        from: (parseInt(page as string) - 1) * parseInt(limit as string)
+      };
+
+      const result = await this.retrievalService.searchInElasticsearch(searchQuery);
+
+      res.json({
+        employeeUuid,
+        searchQuery: {
+          text: text || null,
+          category: category || null,
+          documentType: documentType || null,
+          tags: searchQuery.tags || null,
+          dateRange: {
+            from: dateFrom || null,
+            to: dateTo || null
+          }
+        },
+        documents: result.documents.map((doc: any) => {
+          const urls = this.generateDownloadUrls(doc.id, req);
+          return {
+            id: doc.id,
+            title: doc.title,
+            filename: doc.filename,
+            originalName: doc.originalName,
+            size: doc.size,
+            mimetype: doc.mimetype,
+            uploadDate: doc.uploadDate,
+            description: doc.description,
+            category: doc.category,
+            tags: doc.tags,
+            keywords: doc.keywords,
+            employeeUuid: doc.employeeUuid,
+            employeeName: doc.employeeName,
+            employeeCedula: doc.employeeCedula,
+            documentType: doc.documentType,
+            year: doc.year,
+            downloadUrl: urls.downloadUrl,
+            viewUrl: urls.viewUrl,
+            score: doc.score,
+            highlights: doc.highlights
+          };
+        }),
+        pagination: {
+          page: parseInt(page as string),
+          limit: parseInt(limit as string),
+          total: result.total
+        },
+        meta: {
+          took: result.took || 0,
+          employeeInfo: result.documents.length > 0 ? {
+            employeeName: result.documents[0].employeeName,
+            employeeCedula: result.documents[0].employeeCedula
+          } : null
+        }
+      });
+    } catch (error) {
+      console.error('Error in searchInEmployeeDocuments:', error);
+      res.status(500).json({
+        error: 'Error interno del servidor al buscar documentos del empleado'
+      });
+    }
+  };
+
   getDocumentStats = async (req: Request, res: Response) => {
     try {
       const stats = await this.retrievalService.getDocumentStats();

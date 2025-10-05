@@ -520,4 +520,151 @@ export class RetrievalService {
       throw error;
     }
   }
+
+  // NUEVOS MÉTODOS: Búsqueda específica por empleado UUID
+
+  async getDocumentsByEmployeeUuid(
+    employeeUuid: string, 
+    options: {
+      page?: number;
+      limit?: number;
+      sortBy?: string;
+      sortOrder?: 'asc' | 'desc';
+    } = {}
+  ): Promise<DocumentMetadataDto[]> {
+    try {
+      const { page = 1, limit = 20, sortBy = 'uploadDate', sortOrder = 'desc' } = options;
+      
+      console.log(`🔍 Buscando documentos del empleado: ${employeeUuid}`);
+
+      // Primero intentar desde memoria local
+      const allDocuments = await this.documentsService.getAllDocuments();
+      let employeeDocuments = allDocuments.filter(doc => doc.employeeUuid === employeeUuid);
+
+      // Si no hay documentos en memoria, buscar en Elasticsearch
+      if (employeeDocuments.length === 0) {
+        console.log(`📊 No se encontraron documentos en memoria, buscando en Elasticsearch`);
+        
+        const elasticResult = await this.documentsService.searchInElasticsearch({
+          employeeUuid,
+          size: limit,
+          from: (page - 1) * limit
+        });
+
+        if (elasticResult.documents && elasticResult.documents.length > 0) {
+          // Convertir documentos de Elasticsearch a DocumentMetadataDto
+          employeeDocuments = elasticResult.documents.map(doc => ({
+            id: doc.id,
+            filename: doc.filename,
+            originalName: doc.filename || doc.title,
+            mimetype: doc.mimetype || 'application/pdf',
+            size: doc.size || 0,
+            uploadDate: new Date(doc.uploadDate),
+            title: doc.title,
+            description: doc.description,
+            tags: doc.tags || [],
+            category: doc.category,
+            extractedText: doc.content || '',
+            keywords: doc.keywords || [],
+            employeeUuid: doc.employeeUuid,
+            employeeName: doc.employeeName,
+            employeeCedula: doc.employeeCedula,
+            documentType: doc.documentType || 'documentos',
+            filePath: this.reconstructFilePath(doc),
+            relativePath: doc.relativePath,
+            year: doc.year || new Date().getFullYear()
+          }));
+        }
+      }
+
+      // Aplicar ordenamiento
+      employeeDocuments.sort((a, b) => {
+        let aValue, bValue;
+        
+        switch (sortBy) {
+          case 'uploadDate':
+            aValue = a.uploadDate.getTime();
+            bValue = b.uploadDate.getTime();
+            break;
+          case 'title':
+            aValue = a.title?.toLowerCase() || '';
+            bValue = b.title?.toLowerCase() || '';
+            break;
+          case 'size':
+            aValue = a.size;
+            bValue = b.size;
+            break;
+          case 'filename':
+            aValue = a.filename.toLowerCase();
+            bValue = b.filename.toLowerCase();
+            break;
+          default:
+            aValue = a.uploadDate.getTime();
+            bValue = b.uploadDate.getTime();
+        }
+        
+        if (sortOrder === 'asc') {
+          return aValue < bValue ? -1 : aValue > bValue ? 1 : 0;
+        } else {
+          return aValue > bValue ? -1 : aValue < bValue ? 1 : 0;
+        }
+      });
+
+      // Aplicar paginación
+      const startIndex = (page - 1) * limit;
+      const endIndex = startIndex + limit;
+      const paginatedDocuments = employeeDocuments.slice(startIndex, endIndex);
+
+      console.log(`📄 Encontrados ${employeeDocuments.length} documentos para el empleado ${employeeUuid}, mostrando ${paginatedDocuments.length}`);
+
+      return paginatedDocuments;
+    } catch (error) {
+      console.error('Error obteniendo documentos por employeeUuid:', error);
+      throw error;
+    }
+  }
+
+  async searchInElasticsearch(query: {
+    text?: string;
+    employeeUuid?: string;
+    documentType?: string;
+    category?: string;
+    tags?: string[];
+    dateFrom?: Date;
+    dateTo?: Date;
+    size?: number;
+    from?: number;
+  }): Promise<{ documents: any[]; total: number; took?: number }> {
+    try {
+      console.log(`🔍 Buscando en Elasticsearch con filtros:`, query);
+
+      const result = await this.documentsService.searchInElasticsearch(query);
+      
+      console.log(`📊 Elasticsearch encontró ${result.total} documentos`);
+
+      return {
+        documents: result.documents || [],
+        total: result.total || 0,
+        took: 0 // ElasticsearchService no retorna 'took' actualmente
+      };
+    } catch (error) {
+      console.error('Error en búsqueda de Elasticsearch:', error);
+      throw error;
+    }
+  }
+
+  // Método auxiliar para reconstruir la ruta del archivo desde datos de Elasticsearch
+  private reconstructFilePath(elasticDoc: any): string {
+    if (elasticDoc.relativePath) {
+      return path.join(process.cwd(), elasticDoc.relativePath);
+    }
+    
+    // Reconstruir ruta basada en la estructura esperada
+    const year = elasticDoc.year || new Date().getFullYear();
+    const employeeUuid = elasticDoc.employeeUuid;
+    const documentType = elasticDoc.documentType || 'documentos';
+    const filename = elasticDoc.filename;
+    
+    return path.join(process.cwd(), 'uploads', year.toString(), employeeUuid, documentType, filename);
+  }
 }

@@ -1,4 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
+import { isValidUUID } from '../../config/uuid.utils';
 
 export const validateDocumentId = (req: Request, res: Response, next: NextFunction) => {
   const { id } = req.params;
@@ -90,6 +91,24 @@ export const validateTags = (req: Request, res: Response, next: NextFunction) =>
   if (tagsArray.some(tag => typeof tag !== 'string' || tag.trim().length === 0)) {
     return res.status(400).json({
       error: 'Todos los tags deben ser strings válidos'
+    });
+  }
+
+  next();
+};
+
+export const validateEmployeeUuid = (req: Request, res: Response, next: NextFunction) => {
+  const { employeeUuid } = req.params;
+  
+  if (!employeeUuid || typeof employeeUuid !== 'string') {
+    return res.status(400).json({
+      error: 'UUID de empleado requerido'
+    });
+  }
+
+  if (!isValidUUID(employeeUuid)) {
+    return res.status(400).json({
+      error: 'Formato de UUID de empleado inválido. Debe ser un UUID válido (ej: 3389ecbe-a18c-11f0-99f3-0242ac120002)'
     });
   }
 

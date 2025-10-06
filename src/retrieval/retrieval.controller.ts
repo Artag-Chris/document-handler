@@ -6,7 +6,6 @@ export class RetrievalController {
     private readonly retrievalService: RetrievalService = RetrievalService.getInstance()
   ) {}
 
-  // Función auxiliar para generar URLs de descarga
   private generateDownloadUrls(documentId: string, req: Request) {
     const baseUrl = `${req.protocol}://${req.get('host')}`;
     return {
@@ -28,7 +27,6 @@ export class RetrievalController {
 
       const { filePath, document } = result;
 
-      // Configurar headers para descarga
       res.setHeader('Content-Disposition', `attachment; filename="${document.originalName}"`);
       res.setHeader('Content-Type', document.mimetype);
       res.setHeader('Content-Length', document.size);
@@ -347,7 +345,6 @@ export class RetrievalController {
     try {
       const { id } = req.params;
       const { size, minScore } = req.query;
-
       const similarDocuments = await this.retrievalService.findSimilarDocuments(id, {
         size: size ? parseInt(size as string) : 5,
         minScore: minScore ? parseFloat(minScore as string) : 0.5
@@ -489,14 +486,10 @@ export class RetrievalController {
     }
   };
 
-  // NUEVOS MÉTODOS: Búsqueda específica por empleado UUID
-  
   getDocumentsByEmployee = async (req: Request, res: Response) => {
     try {
       const { employeeUuid } = req.params;
       const { page = '1', limit = '20', sortBy = 'uploadDate', sortOrder = 'desc' } = req.query;
-
-      console.log(`🔍 Obteniendo documentos del empleado: ${employeeUuid}`);
 
       const documents = await this.retrievalService.getDocumentsByEmployeeUuid(
         employeeUuid,
@@ -563,13 +556,11 @@ export class RetrievalController {
         documentType,
         dateFrom, 
         dateTo, 
-        includeContent = 'false',
+     //   includeContent = 'false',
         page = '1',
         limit = '20',
-        sortBy = 'relevance'
+      //  sortBy = 'relevance'
       } = req.query;
-
-      console.log(`🔍 Buscando en documentos del empleado: ${employeeUuid}, query: ${text}`);
 
       if (!text && !category && !tags && !documentType && !dateFrom && !dateTo) {
         return res.status(400).json({

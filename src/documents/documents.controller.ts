@@ -7,10 +7,8 @@ export class DocumentsController {
   ) {}
 
   uploadDocument = async (req: Request, res: Response) => {
-    console.log('📁 Received uploadDocument request');
-    console.log(req.body);
+
     try {
-      // Asegurar headers CORS en la respuesta
       res.header('Access-Control-Allow-Origin', '*');
       res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
       res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, Content-Disposition');
@@ -32,7 +30,7 @@ export class DocumentsController {
         documentType 
       } = req.body;
 
-      // Validar que employeeUuid esté presente
+
       if (!employeeUuid) {
         return res.status(400).json({
           error: 'employeeUuid es requerido para organizar los documentos'
@@ -52,15 +50,6 @@ export class DocumentsController {
         documentType: documentType || 'documentos'
       });
 
-      // Log para Elasticsearch
-      console.log('🔍 Datos preparados para Elasticsearch:', {
-        index: `documents-${result.document.year}`,
-        type: '_doc',
-        id: result.document.id,
-        body: result.elasticsearchData
-      });
-
-      // Generar URLs de descarga
       const baseUrl = `${req.protocol}://${req.get('host')}`;
       const downloadUrls = {
         downloadUrl: `${baseUrl}/api/retrieval/download/${result.document.id}`,

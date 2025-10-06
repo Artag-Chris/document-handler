@@ -179,12 +179,10 @@ export class ElasticsearchService {
             }
           }
         });
-        
-        console.log(`✅ Índice '${index}' creado exitosamente`);
+
         return true;
       }
-      
-      console.log(`ℹ️ Índice '${index}' ya existe`);
+
       return true;
     } catch (error) {
       console.error(`❌ Error creando índice '${index}':`, error);
@@ -204,12 +202,6 @@ export class ElasticsearchService {
         index,
         id: documentId,
         document: document
-      });
-
-      console.log(`📄 Documento indexado exitosamente:`, {
-        index,
-        id: response._id,
-        result: response.result
       });
 
       return { 
@@ -329,7 +321,6 @@ export class ElasticsearchService {
         id: documentId
       });
 
-      console.log(`🗑️ Documento eliminado de Elasticsearch:`, { index, id: documentId });
       return { success: true };
     } catch (error) {
       console.error('❌ Error eliminando documento:', error);

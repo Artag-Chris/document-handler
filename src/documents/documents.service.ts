@@ -21,7 +21,6 @@ export class DocumentsService {
     return DocumentsService.instance;
   }
 
-  // Método para acceder al servicio de Elasticsearch
   public getElasticsearchService(): ElasticsearchService {
     return this.elasticsearchService;
   }
@@ -31,12 +30,11 @@ export class DocumentsService {
     employeeCedula?: string;
     documentType?: string;
   }): Promise<string> {
-    // Si el archivo ya está en la ubicación correcta, no hacer nada
+
     if (!file.path.includes('temp') && metadata?.employeeUuid) {
       return file.path;
     }
 
-    // Si no hay metadata, mantener en temp
     if (!metadata?.employeeUuid) {
       console.warn('⚠️ No se puede mover archivo sin employeeUuid, manteniéndolo en temp');
       return file.path;
@@ -45,14 +43,11 @@ export class DocumentsService {
     try {
       const currentYear = new Date().getFullYear();
       const documentType = metadata.documentType || 'documentos';
-      
-      // Crear directorio de destino
       const targetDir = path.join(process.cwd(), 'uploads', currentYear.toString(), metadata.employeeUuid, documentType);
       if (!fs.existsSync(targetDir)) {
         fs.mkdirSync(targetDir, { recursive: true });
       }
 
-      // Generar nuevo nombre de archivo
       const timestamp = Date.now();
       const extension = path.extname(file.originalname);
       const baseName = path.basename(file.originalname, extension);
@@ -60,15 +55,13 @@ export class DocumentsService {
       const newFileName = `${currentYear}_${employeeCedula}_${documentType}_${timestamp}_${baseName}${extension}`;
       
       const targetPath = path.join(targetDir, newFileName);
-      
-      // Mover archivo
+
       fs.renameSync(file.path, targetPath);
-      console.log(`📂 Archivo movido de ${file.path} a ${targetPath}`);
       
       return targetPath;
     } catch (error) {
       console.error('❌ Error moviendo archivo:', error);
-      return file.path; // Mantener en ubicación original si hay error
+      return file.path; 
     }
   }
 
@@ -87,7 +80,6 @@ export class DocumentsService {
       let extractedText = '';
       let keywords: string[] = [];
 
-      // Extraer texto si es un PDF
       if (file.mimetype === 'application/pdf') {
         const buffer = fs.readFileSync(file.path);
         const pdfData = await pdfParse(buffer);
@@ -95,14 +87,13 @@ export class DocumentsService {
         keywords = this.extractKeywords(extractedText);
       }
 
-      // Mover archivo del directorio temporal al definitivo si es necesario
       const finalFilePath = await this.moveFileToCorrectLocation(file, {
         employeeUuid: metadata?.employeeUuid,
         employeeCedula: metadata?.employeeCedula,
         documentType: metadata?.documentType
       });
 
-      // Calcular ruta relativa para almacenamiento
+
       const currentYear = new Date().getFullYear();
       const relativePath = path.relative(process.cwd(), finalFilePath);
 
@@ -128,7 +119,6 @@ export class DocumentsService {
         year: currentYear
       };
 
-      // Preparar datos para Elasticsearch
       const elasticsearchData: ElasticsearchDocumentDto = {
         id: documentId,
         title: document.title!,
@@ -148,10 +138,10 @@ export class DocumentsService {
         relativePath: document.relativePath
       };
 
-      // Guardar en memoria (en producción sería una base de datos)
+
       this.documents.set(documentId, document);
 
-      // Intentar indexar en Elasticsearch automáticamente
+
       try {
         const elasticResult = await this.elasticsearchService.indexDocument(
           elasticsearchData,
@@ -160,7 +150,7 @@ export class DocumentsService {
         );
 
         if (elasticResult.success) {
-          console.log('� Documento indexado en Elasticsearch:', elasticResult.id);
+
           document.elasticId = elasticResult.id;
         } else {
           console.warn('⚠️ No se pudo indexar en Elasticsearch:', elasticResult.error);
@@ -168,17 +158,6 @@ export class DocumentsService {
       } catch (error) {
         console.warn('⚠️ Error conectando con Elasticsearch (documento guardado localmente):', error);
       }
-
-      console.log('📄 Documento procesado exitosamente:', {
-        id: documentId,
-        employeeUuid: document.employeeUuid,
-        documentType: document.documentType,
-        year: currentYear,
-        path: relativePath,
-        keywordsCount: keywords.length,
-        fileSize: document.size,
-        elasticsearchIndexed: !!document.elasticId
-      });
 
       return { document, elasticsearchData };
     } catch (error) {
@@ -205,7 +184,6 @@ export class DocumentsService {
       // Eliminar archivo físico usando la ruta completa almacenada
       if (fs.existsSync(document.filePath)) {
         fs.unlinkSync(document.filePath);
-        console.log(`🗑️ Archivo eliminado: ${document.filePath}`);
       }
 
       // Eliminar de memoria
@@ -214,17 +192,9 @@ export class DocumentsService {
       // Intentar eliminar de Elasticsearch
       try {
         await this.elasticsearchService.deleteDocument(id, `documents-${document.year}`);
-        console.log(`🗑️ Documento eliminado de Elasticsearch: ${id}`);
       } catch (error) {
         console.warn('⚠️ Error eliminando de Elasticsearch:', error);
       }
-      
-      console.log(`📋 Documento eliminado del sistema:`, {
-        id,
-        employeeUuid: document.employeeUuid,
-        filename: document.filename,
-        documentType: document.documentType
-      });
       
       return true;
     } catch (error) {

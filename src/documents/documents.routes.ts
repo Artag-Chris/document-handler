@@ -13,10 +13,9 @@ export class DocumentsRoutes {
     const router = Router();
     const documentsController = new DocumentsController();
 
-    // Aplicar middleware CORS a todas las rutas
+
     router.use(corsMiddleware);
 
-    // Subir un solo documento
     router.post('/upload', 
       uploadSingle, 
       validateDocumentUpload, 

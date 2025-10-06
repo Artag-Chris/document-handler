@@ -22,21 +22,18 @@ export class RetrievalService {
     document: DocumentMetadataDto 
   } | null> {
     try {
-      // Primero intentar buscar en memoria (DocumentsService)
+    
       let document = await this.documentsService.getDocumentById(documentId);
-      
-      // Si no está en memoria, buscar en Elasticsearch
+
       if (!document) {
-        console.log(`📄 Documento no encontrado en memoria, buscando en Elasticsearch: ${documentId}`);
-        
-        // Intentar buscar por ID exacto primero
+
         const elasticDoc = await this.documentsService.getDocumentByIdFromElasticsearch(
           documentId, 
           `documents-${new Date().getFullYear()}`
         );
         
         if (elasticDoc) {
-          // Convertir documento de Elasticsearch a DocumentMetadataDto
+       
           document = {
             id: elasticDoc.id || documentId,
             filename: elasticDoc.filename,
@@ -55,17 +52,10 @@ export class RetrievalService {
             employeeCedula: elasticDoc.employeeCedula,
             documentType: elasticDoc.documentType,
             year: elasticDoc.year,
-            // Construir rutas basándose en la estructura conocida
-            filePath: '', // Lo calculamos abajo
+            filePath: '', 
             relativePath: `uploads\\${elasticDoc.year}\\${elasticDoc.employeeUuid}\\${elasticDoc.documentType}\\${elasticDoc.filename}`
           };
           
-          console.log(`✅ Documento encontrado en Elasticsearch por ID:`, {
-            id: document.id,
-            filename: document.filename,
-            employeeUuid: document.employeeUuid,
-            documentType: document.documentType
-          });
         }
       }
       
@@ -74,20 +64,18 @@ export class RetrievalService {
         return null;
       }
 
-      // Usar filePath si está disponible, sino construir la ruta desde relativePath
       let filePath: string;
       
       if (document.filePath && existsSync(document.filePath)) {
         filePath = document.filePath;
-        console.log(`📁 Usando filePath directo: ${filePath}`);
+     
       } else if (document.relativePath) {
-        // Construir ruta absoluta desde relativePath
-        // Normalizar separadores de ruta para Windows/Linux
+
         const normalizedRelativePath = document.relativePath.replace(/\\/g, '/');
         filePath = path.resolve(process.cwd(), normalizedRelativePath);
-        console.log(`📁 Construyendo desde relativePath: ${filePath}`);
+
       } else {
-        // Fallback: construir ruta desde estructura conocida
+
         filePath = path.join(
           process.cwd(), 
           'uploads', 
@@ -96,52 +84,33 @@ export class RetrievalService {
           document.documentType || 'documentos',
           document.filename
         );
-        console.log(`📁 Usando estructura conocida: ${filePath}`);
+
       }
       
       if (!existsSync(filePath)) {
-        console.log(`❌ Archivo no encontrado en: ${filePath}`);
-        
-        // Intentar buscar por patrón si el archivo exacto no existe
+
         const dir = dirname(filePath);
         const baseFilename = document.filename;
-        
-        // Extraer partes del filename para buscar por patrón
+
         const filenameParts = baseFilename.split('_');
         if (filenameParts.length >= 4) {
           const [year, cedula, docType, ...rest] = filenameParts;
           const extension = path.extname(baseFilename);
-          
-          // Obtener solo la parte final del nombre (después del último underscore antes de la extensión)
           const lastPart = path.basename(baseFilename, extension).split('_').pop();
-          
-          console.log(`🔍 Buscando archivos con patrón en: ${dir}`);
-          console.log(`📋 Componentes: año=${year}, cedula=${cedula}, docType=${docType}, lastPart=${lastPart}, ext=${extension}`);
           
           try {
             if (existsSync(dir)) {
               const files = readdirSync(dir);
               const matchingFile = files.find(file => {
-                // Buscar archivos que tengan la misma estructura: año_cedula_docType_timestamp_nombre.ext
                 const regex = new RegExp(`^${year}_${cedula}_${docType}_\\d+_${lastPart?.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}${extension.replace('.', '\\.')}$`);
                 return regex.test(file);
               });
               
               if (matchingFile) {
                 filePath = path.join(dir, matchingFile);
-                console.log(`✅ Archivo encontrado por patrón: ${filePath}`);
+
               } else {
-                console.log(`📋 Archivos en directorio:`, files);
-                console.log(`📋 Buscando patrón: ${year}_${cedula}_${docType}_*_${lastPart}${extension}`);
-                console.log(`📋 Datos del documento:`, {
-                  id: document.id,
-                  filename: document.filename,
-                  filePath: document.filePath,
-                  relativePath: document.relativePath,
-                  employeeUuid: document.employeeUuid,
-                  documentType: document.documentType,
-                  year: document.year
-                });
+              
                 throw new Error(`Archivo no encontrado en el sistema de archivos: ${filePath}`);
               }
             } else {
@@ -152,26 +121,16 @@ export class RetrievalService {
             throw new Error(`Archivo no encontrado en el sistema de archivos: ${filePath}`);
           }
         } else {
-          console.log(`📋 Datos del documento:`, {
-            id: document.id,
-            filename: document.filename,
-            filePath: document.filePath,
-            relativePath: document.relativePath,
-            employeeUuid: document.employeeUuid,
-            documentType: document.documentType,
-            year: document.year
-          });
+         
           throw new Error(`Archivo no encontrado en el sistema de archivos: ${filePath}`);
         }
       }
 
-      console.log(`✅ Archivo encontrado: ${filePath}`);
       return {
         filePath,
         document
       };
     } catch (error) {
-      console.error('Error getting document file:', error);
       throw error;
     }
   }
@@ -301,7 +260,6 @@ export class RetrievalService {
     }
   }
 
-  // Búsqueda avanzada por contenido y palabras clave
   async advancedSearch(params: {
     query?: string;
     keywords?: string[];
@@ -332,11 +290,7 @@ export class RetrievalService {
     };
   }> {
     try {
-      console.log('🔍 Búsqueda avanzada con parámetros:', params);
-
       const elasticResult = await this.documentsService.getElasticsearchService().advancedSearch(params);
-
-      // Convertir documentos de Elasticsearch a DocumentMetadataDto
       const documents: DocumentMetadataDto[] = elasticResult.documents.map((doc: any) => ({
         id: doc.id,
         filename: doc.filename,
@@ -361,7 +315,6 @@ export class RetrievalService {
         highlights: doc.highlights
       }));
 
-      // Procesar agregaciones para crear facetas
       const facets = elasticResult.aggregations ? {
         categories: elasticResult.aggregations.categories?.buckets?.map((bucket: any) => ({
           key: bucket.key,
@@ -395,7 +348,6 @@ export class RetrievalService {
     }
   }
 
-  // Búsqueda de autocompletado
   async getSearchSuggestions(params: {
     text: string;
     field?: 'title' | 'keywords' | 'content';
@@ -409,7 +361,6 @@ export class RetrievalService {
     }
   }
 
-  // Buscar documentos similares
   async findSimilarDocuments(documentId: string, params: {
     size?: number;
     minScore?: number;
@@ -521,8 +472,6 @@ export class RetrievalService {
     }
   }
 
-  // NUEVOS MÉTODOS: Búsqueda específica por empleado UUID
-
   async getDocumentsByEmployeeUuid(
     employeeUuid: string, 
     options: {
@@ -534,16 +483,12 @@ export class RetrievalService {
   ): Promise<DocumentMetadataDto[]> {
     try {
       const { page = 1, limit = 20, sortBy = 'uploadDate', sortOrder = 'desc' } = options;
-      
-      console.log(`🔍 Buscando documentos del empleado: ${employeeUuid}`);
 
-      // Primero intentar desde memoria local
       const allDocuments = await this.documentsService.getAllDocuments();
       let employeeDocuments = allDocuments.filter(doc => doc.employeeUuid === employeeUuid);
 
       // Si no hay documentos en memoria, buscar en Elasticsearch
       if (employeeDocuments.length === 0) {
-        console.log(`📊 No se encontraron documentos en memoria, buscando en Elasticsearch`);
         
         const elasticResult = await this.documentsService.searchInElasticsearch({
           employeeUuid,
@@ -615,8 +560,6 @@ export class RetrievalService {
       const endIndex = startIndex + limit;
       const paginatedDocuments = employeeDocuments.slice(startIndex, endIndex);
 
-      console.log(`📄 Encontrados ${employeeDocuments.length} documentos para el empleado ${employeeUuid}, mostrando ${paginatedDocuments.length}`);
-
       return paginatedDocuments;
     } catch (error) {
       console.error('Error obteniendo documentos por employeeUuid:', error);
@@ -636,12 +579,7 @@ export class RetrievalService {
     from?: number;
   }): Promise<{ documents: any[]; total: number; took?: number }> {
     try {
-      console.log(`🔍 Buscando en Elasticsearch con filtros:`, query);
-
       const result = await this.documentsService.searchInElasticsearch(query);
-      
-      console.log(`📊 Elasticsearch encontró ${result.total} documentos`);
-
       return {
         documents: result.documents || [],
         total: result.total || 0,
@@ -653,13 +591,11 @@ export class RetrievalService {
     }
   }
 
-  // Método auxiliar para reconstruir la ruta del archivo desde datos de Elasticsearch
   private reconstructFilePath(elasticDoc: any): string {
     if (elasticDoc.relativePath) {
       return path.join(process.cwd(), elasticDoc.relativePath);
     }
-    
-    // Reconstruir ruta basada en la estructura esperada
+
     const year = elasticDoc.year || new Date().getFullYear();
     const employeeUuid = elasticDoc.employeeUuid;
     const documentType = elasticDoc.documentType || 'documentos';

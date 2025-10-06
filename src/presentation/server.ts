@@ -1,6 +1,7 @@
 import express, { Router } from "express";
 import path from "path";
 import cors from "cors";
+import { ElasticsearchService } from "../config/elasticsearch.service";
 
 interface Options {
   port: number;
@@ -27,7 +28,7 @@ export class Server {
   }
 
   private configure() {
-    // Configuración CORS mejorada para manejar preflight requests
+
     this.app.use(cors({
       origin: '*',
       methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
@@ -43,10 +44,9 @@ export class Server {
       ],
       exposedHeaders: ['Content-Disposition'],
       credentials: false,
-      optionsSuccessStatus: 200 // Para browsers antiguos
+      optionsSuccessStatus: 200 
     }));
 
-    // Middleware adicional para asegurar headers CORS en todas las responses
     this.app.use((req, res, next) => {
       const origin = req.headers.origin;
       console.log(`🌐 Request from origin: ${origin} to ${req.method} ${req.path}`);
@@ -55,10 +55,8 @@ export class Server {
       res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH');
       res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, Content-Disposition, x-finova-api-key, x-finovaClient-id, Accept, Origin, X-Requested-With');
       res.header('Access-Control-Expose-Headers', 'Content-Disposition');
-      
-      // Responder a preflight requests
+
       if (req.method === 'OPTIONS') {
-        console.log(`✅ Handling OPTIONS preflight request for ${req.path}`);
         res.status(200).end();
         return;
       }
@@ -89,8 +87,21 @@ export class Server {
   }
 
   async start() {
-    this.serverListener = this.app.listen(this.port, () => {
-      console.log(`Server running on port ${this.port}`);
+    this.serverListener = this.app.listen(this.port, '0.0.0.0', async () => {
+
+      const elasticsearchService = ElasticsearchService.getInstance();
+      const connectionResult = await elasticsearchService.testConnection();
+      
+      if (connectionResult.connected) {
+        console.log('✅ Elasticsearch conectado exitosamente');
+        console.log(`📊 Cluster: ${connectionResult.info?.cluster}`);
+        console.log(`📈 Versión: ${connectionResult.info?.version}`);
+      } else {
+        console.log('❌ Error conectando con Elasticsearch:');
+        console.log(`   ${connectionResult.error}`);
+        console.log('⚠️  La API funcionará pero sin capacidades de búsqueda');
+      }
+
     });
   }
 

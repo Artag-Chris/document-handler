@@ -9,11 +9,7 @@ import { validateUUIDDetailed } from '../config/uuid.utils';
 export class AppRoutes {
   static get routes(): Router {
     const router = Router();
-    /*  
-    aqui iran el nombre de los modulos que usaremos y la importacion de sus rutas por defecto esta prsima como ORMs
-    */
-  
-    // Health check endpoint con CORS habilitado
+
     router.get('/health', (req, res) => {
       res.header('Access-Control-Allow-Origin', '*');
       res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
@@ -37,7 +33,6 @@ export class AppRoutes {
       });
     });
 
-    // CORS preflight para todas las rutas API
     router.options('/api/*', (req, res) => {
       res.header('Access-Control-Allow-Origin', '*');
       res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH');
@@ -46,11 +41,9 @@ export class AppRoutes {
       res.status(200).end();
     });
 
-    // Endpoint para validar UUIDs
     router.get('/validate-uuid/:uuid', (req, res) => {
       res.header('Access-Control-Allow-Origin', '*');
       const { uuid } = req.params;
-      
       const validation = validateUUIDDetailed(uuid);
       
       res.json({
@@ -67,8 +60,6 @@ export class AppRoutes {
     router.use(`/api/documents`, DocumentsRoutes.routes)
     router.use(`/api/retrieval`, RetrievalRoutes.routes)
     router.use(`/api/elasticsearch`, ElasticsearchRoutes.routes)
-
- 
 
     return router;
   }

@@ -121,3 +121,6 @@ export const uploadSingle = uploadMiddleware.single('document');
 
 // Middleware para múltiples archivos
 export const uploadMultiple = uploadMiddleware.array('documents', 5);
+
+// Middleware específico para suplencias (espera campo 'files')
+export const uploadSuplenciaFiles = uploadMiddleware.array('files', 10);

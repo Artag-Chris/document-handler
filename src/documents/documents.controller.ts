@@ -6,6 +6,89 @@ export class DocumentsController {
     private readonly documentsService: DocumentsService = DocumentsService.getInstance()
   ) {}
 
+  /**
+   * 🔄 PROMESA 2: Upload de archivos para Suplencias
+   * Recibe archivos del frontend, los guarda con Multer, indexa en Elasticsearch
+   * y devuelve la información necesaria para la Promesa 3 (registro en BD)
+   */
+  uploadSuplenciaDocuments = async (req: Request, res: Response) => {
+    try {
+      console.log('📥 Request recibido en uploadSuplenciaDocuments');
+      console.log('📋 Body:', req.body);
+      console.log('📎 Files:', req.files ? (Array.isArray(req.files) ? `${req.files.length} archivos` : 'Files object') : 'No files');
+      
+      // Verificar que haya archivos
+      if (!req.files || !Array.isArray(req.files) || req.files.length === 0) {
+        console.warn('⚠️ No se recibieron archivos en el request');
+        return res.status(400).json({
+          success: false,
+          message: 'No se han proporcionado archivos. Asegúrate de enviar archivos con el campo "files" (plural)',
+          error: 'No files uploaded',
+          hint: 'El FormData debe incluir: formData.append("files", archivo)'
+        });
+      }
+
+      // Extraer datos del body
+      const { 
+        suplencia_id,
+        docente_ausente_id,
+        docente_reemplazo_id,
+        tipo_documento = 'suplencia' 
+      } = req.body;
+
+      // Validar datos requeridos
+      if (!suplencia_id) {
+        return res.status(400).json({
+          success: false,
+          message: 'suplencia_id es requerido',
+          error: 'Missing suplencia_id'
+        });
+      }
+
+      if (!docente_ausente_id || !docente_reemplazo_id) {
+        return res.status(400).json({
+          success: false,
+          message: 'docente_ausente_id y docente_reemplazo_id son requeridos',
+          error: 'Missing employee IDs'
+        });
+      }
+
+      console.log(`📤 Procesando ${req.files.length} archivos para suplencia ${suplencia_id}`);
+
+      // Procesar archivos con el servicio
+      const resultado = await this.documentsService.uploadSuplenciaDocuments(
+        req.files as Express.Multer.File[],
+        {
+          suplencia_id,
+          docente_ausente_id,
+          docente_reemplazo_id,
+          tipo_documento
+        }
+      );
+
+      // ✅ Respuesta para la Promesa 3
+      return res.status(200).json({
+        success: true,
+        message: `${resultado.archivos_procesados.length} archivos procesados exitosamente`,
+        data: {
+          suplencia_id: resultado.suplencia_id,
+          total_archivos: resultado.total_archivos,
+          archivos_procesados: resultado.archivos_procesados,
+          elasticsearch_indexados: resultado.elasticsearch_indexados,
+          timestamp: resultado.timestamp
+        }
+      });
+
+    } catch (error: any) {
+      console.error('❌ Error en uploadSuplenciaDocuments:', error);
+      return res.status(500).json({
+        success: false,
+        message: 'Error al procesar archivos de suplencia',
+        error: error.message || 'Internal server error'
+      });
+    }
+  }
+
   uploadDocument = async (req: Request, res: Response) => {
 
     try {

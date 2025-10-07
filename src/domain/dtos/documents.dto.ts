@@ -55,6 +55,7 @@ export interface ElasticsearchDocumentDto {
   mimetype: string;
   size: number;
   relativePath: string;
+  metadata?: Record<string, any>; // Metadata adicional (ej: suplencia_id, docente_reemplazo_id, etc.)
 }
 
 export interface SearchDocumentDto {

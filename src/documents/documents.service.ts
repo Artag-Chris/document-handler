@@ -424,4 +424,216 @@ export class DocumentsService {
   getElasticsearchConfig() {
     return this.elasticsearchService.getConfig();
   }
+
+  /**
+   * 🔄 PROMESA 2: Subir y procesar archivos para Suplencias
+   * Este método maneja archivos de suplencias y los guarda en las carpetas
+   * de ambos empleados (ausente y reemplazo), además de indexarlos en Elasticsearch
+   */
+  async uploadSuplenciaDocuments(
+    files: Express.Multer.File[],
+    metadata: {
+      suplencia_id: string;
+      docente_ausente_id: string;
+      docente_reemplazo_id: string;
+      tipo_documento?: string;
+    }
+  ): Promise<{
+    success: boolean;
+    suplencia_id: string;
+    total_archivos: number;
+    archivos_procesados: Array<{
+      nombre_original: string;
+      nombre_guardado: string;
+      ruta_relativa: string;
+      size: number;
+      mimetype: string;
+      docente_ausente: {
+        empleado_id: string;
+        ruta_completa: string;
+        ruta_relativa: string;
+      };
+      docente_reemplazo: {
+        empleado_id: string;
+        ruta_completa: string;
+        ruta_relativa: string;
+      };
+      elasticsearch_id?: string;
+    }>;
+    elasticsearch_indexados: number;
+    timestamp: string;
+  }> {
+    try {
+      const currentYear = new Date().getFullYear();
+      const tipoDocumento = metadata.tipo_documento || 'suplencias';
+      const archivosProcessados: any[] = [];
+      let elasticsearchIndexados = 0;
+
+      console.log(`📁 Procesando ${files.length} archivos para suplencia ${metadata.suplencia_id}`);
+      console.log(`👤 Docente ausente: ${metadata.docente_ausente_id}`);
+      console.log(`👤 Docente reemplazo: ${metadata.docente_reemplazo_id}`);
+
+      for (const file of files) {
+        try {
+          const timestamp = Date.now();
+          const extension = path.extname(file.originalname);
+          const baseName = path.basename(file.originalname, extension);
+          
+          // Generar nombre único para el archivo
+          const nombreGuardado = `${currentYear}_suplencia_${metadata.suplencia_id.substring(0, 8)}_${timestamp}_${baseName}${extension}`;
+
+          // ===== GUARDAR EN CARPETA DEL DOCENTE AUSENTE =====
+          const dirAusente = path.join(
+            process.cwd(),
+            'uploads',
+            currentYear.toString(),
+            metadata.docente_ausente_id,
+            tipoDocumento
+          );
+
+          if (!fs.existsSync(dirAusente)) {
+            fs.mkdirSync(dirAusente, { recursive: true });
+          }
+
+          const rutaCompletaAusente = path.join(dirAusente, nombreGuardado);
+          const rutaRelativaAusente = path.relative(process.cwd(), rutaCompletaAusente);
+
+          // ===== GUARDAR EN CARPETA DEL DOCENTE REEMPLAZO =====
+          const dirReemplazo = path.join(
+            process.cwd(),
+            'uploads',
+            currentYear.toString(),
+            metadata.docente_reemplazo_id,
+            tipoDocumento
+          );
+
+          if (!fs.existsSync(dirReemplazo)) {
+            fs.mkdirSync(dirReemplazo, { recursive: true });
+          }
+
+          const rutaCompletaReemplazo = path.join(dirReemplazo, nombreGuardado);
+          const rutaRelativaReemplazo = path.relative(process.cwd(), rutaCompletaReemplazo);
+
+          // Copiar archivo a ambas ubicaciones
+          if (fs.existsSync(file.path)) {
+            // Copiar a carpeta del docente ausente
+            fs.copyFileSync(file.path, rutaCompletaAusente);
+            console.log(`✅ Archivo copiado a docente ausente: ${rutaRelativaAusente}`);
+
+            // Copiar a carpeta del docente reemplazo
+            fs.copyFileSync(file.path, rutaCompletaReemplazo);
+            console.log(`✅ Archivo copiado a docente reemplazo: ${rutaRelativaReemplazo}`);
+
+            // Eliminar archivo temporal original
+            fs.unlinkSync(file.path);
+          }
+
+          // ===== EXTRAER TEXTO SI ES PDF =====
+          let extractedText = '';
+          let keywords: string[] = [];
+
+          if (file.mimetype === 'application/pdf') {
+            try {
+              const buffer = fs.readFileSync(rutaCompletaAusente);
+              const pdfData = await pdfParse(buffer);
+              extractedText = pdfData.text;
+              keywords = this.extractKeywords(extractedText);
+              console.log(`📄 Texto extraído del PDF (${extractedText.length} caracteres)`);
+            } catch (pdfError) {
+              console.warn('⚠️ No se pudo extraer texto del PDF:', pdfError);
+            }
+          }
+
+          // ===== INDEXAR EN ELASTICSEARCH =====
+          let elasticsearchId: string | undefined;
+
+          try {
+            const documentId = uuidv4();
+            
+            const elasticsearchData: ElasticsearchDocumentDto = {
+              id: documentId,
+              title: file.originalname,
+              content: extractedText,
+              keywords,
+              tags: ['suplencia', tipoDocumento],
+              category: 'suplencias',
+              employeeUuid: metadata.docente_ausente_id, // Indexar bajo el docente ausente
+              employeeName: undefined,
+              employeeCedula: undefined,
+              documentType: tipoDocumento,
+              uploadDate: new Date(),
+              year: currentYear,
+              filename: nombreGuardado,
+              mimetype: file.mimetype,
+              size: file.size,
+              relativePath: rutaRelativaAusente,
+              // Metadata adicional para suplencias
+              metadata: {
+                suplencia_id: metadata.suplencia_id,
+                docente_ausente_id: metadata.docente_ausente_id,
+                docente_reemplazo_id: metadata.docente_reemplazo_id,
+                tipo: 'suplencia'
+              }
+            };
+
+            const elasticResult = await this.elasticsearchService.indexDocument(
+              elasticsearchData,
+              documentId,
+              `documents-${currentYear}`
+            );
+
+            if (elasticResult.success) {
+              elasticsearchId = elasticResult.id;
+              elasticsearchIndexados++;
+              console.log(`✅ Documento indexado en Elasticsearch: ${elasticResult.id}`);
+            } else {
+              console.warn('⚠️ No se pudo indexar en Elasticsearch:', elasticResult.error);
+            }
+          } catch (elasticError) {
+            console.warn('⚠️ Error al indexar en Elasticsearch:', elasticError);
+          }
+
+          // ===== AGREGAR A RESULTADOS =====
+          archivosProcessados.push({
+            nombre_original: file.originalname,
+            nombre_guardado: nombreGuardado,
+            ruta_relativa: rutaRelativaAusente, // Ruta principal (docente ausente)
+            size: file.size,
+            mimetype: file.mimetype,
+            docente_ausente: {
+              empleado_id: metadata.docente_ausente_id,
+              ruta_completa: rutaCompletaAusente,
+              ruta_relativa: rutaRelativaAusente
+            },
+            docente_reemplazo: {
+              empleado_id: metadata.docente_reemplazo_id,
+              ruta_completa: rutaCompletaReemplazo,
+              ruta_relativa: rutaRelativaReemplazo
+            },
+            elasticsearch_id: elasticsearchId
+          });
+
+        } catch (fileError) {
+          console.error(`❌ Error procesando archivo ${file.originalname}:`, fileError);
+          throw fileError;
+        }
+      }
+
+      console.log(`✅ Total procesados: ${archivosProcessados.length} archivos`);
+      console.log(`🔍 Indexados en Elasticsearch: ${elasticsearchIndexados} archivos`);
+
+      return {
+        success: true,
+        suplencia_id: metadata.suplencia_id,
+        total_archivos: archivosProcessados.length,
+        archivos_procesados: archivosProcessados,
+        elasticsearch_indexados: elasticsearchIndexados,
+        timestamp: new Date().toISOString()
+      };
+
+    } catch (error) {
+      console.error('❌ Error en uploadSuplenciaDocuments:', error);
+      throw new Error(`Error al procesar archivos de suplencia: ${error}`);
+    }
+  }
 }

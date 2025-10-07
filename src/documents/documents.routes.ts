@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { DocumentsController } from './documents.controller';
-import { uploadSingle, uploadMultiple } from './middlewares/upload.middleware';
+import { uploadSingle, uploadMultiple, uploadSuplenciaFiles } from './middlewares/upload.middleware';
 import { 
   validateDocumentUpload, 
   validateMultipleDocumentUpload, 
@@ -28,6 +28,14 @@ export class DocumentsRoutes {
       uploadMultiple, 
       validateMultipleDocumentUpload, 
       documentsController.uploadMultipleDocuments
+    );
+
+    // 🔄 PROMESA 2: Upload de archivos para Suplencias
+    // Recibe archivos con nombre de campo 'files', los guarda en carpetas de ambos empleados, 
+    // indexa en Elasticsearch y devuelve info para Promesa 3
+    router.post('/upload/suplencias',
+      uploadSuplenciaFiles,  // Usa middleware específico que espera campo 'files'
+      documentsController.uploadSuplenciaDocuments
     );
 
     // Obtener todos los documentos

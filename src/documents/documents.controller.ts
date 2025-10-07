@@ -7,6 +7,97 @@ export class DocumentsController {
   ) {}
 
   /**
+   * 🔄 PROMESA 2: Upload de archivos para Horas Extra
+   * Recibe archivos del frontend, los guarda con Multer, indexa en Elasticsearch
+   * y devuelve la información necesaria para la Promesa 3 (registro en BD)
+   */
+  uploadHorasExtraDocuments = async (req: Request, res: Response) => {
+    try {
+      console.log('📥 Request recibido en uploadHorasExtraDocuments');
+      console.log('📋 Body:', req.body);
+      console.log('📎 Files:', req.files ? (Array.isArray(req.files) ? `${req.files.length} archivos` : 'Files object') : 'No files');
+      
+      // Verificar que haya archivos
+      if (!req.files || !Array.isArray(req.files) || req.files.length === 0) {
+        console.warn('⚠️ No se recibieron archivos en el request');
+        return res.status(400).json({
+          success: false,
+          message: 'No se han proporcionado archivos. Asegúrate de enviar archivos con el campo "files" (plural)',
+          error: 'No files uploaded',
+          hint: 'El FormData debe incluir: formData.append("files", archivo)'
+        });
+      }
+
+      // Extraer datos del body
+      const { 
+        horas_extra_id,
+        empleado_id,
+        sede_id,
+        tipo_documento = 'horas_extra' 
+      } = req.body;
+
+      // Validar datos requeridos
+      if (!horas_extra_id) {
+        return res.status(400).json({
+          success: false,
+          message: 'horas_extra_id es requerido',
+          error: 'Missing horas_extra_id'
+        });
+      }
+
+      if (!empleado_id) {
+        return res.status(400).json({
+          success: false,
+          message: 'empleado_id es requerido',
+          error: 'Missing empleado_id'
+        });
+      }
+
+      if (!sede_id) {
+        return res.status(400).json({
+          success: false,
+          message: 'sede_id es requerido',
+          error: 'Missing sede_id'
+        });
+      }
+
+      console.log(`📤 Procesando ${req.files.length} archivos para horas extra ${horas_extra_id}`);
+
+      // Procesar archivos con el servicio
+      const resultado = await this.documentsService.uploadHorasExtraDocuments(
+        req.files as Express.Multer.File[],
+        {
+          horas_extra_id,
+          empleado_id,
+          sede_id,
+          tipo_documento
+        }
+      );
+
+      // ✅ Respuesta para la Promesa 3
+      return res.status(200).json({
+        success: true,
+        message: 'Archivos subidos y procesados exitosamente',
+        data: {
+          horas_extra_id: resultado.horas_extra_id,
+          total_archivos: resultado.total_archivos,
+          archivos_procesados: resultado.archivos_procesados,
+          elasticsearch_indexados: resultado.elasticsearch_indexados,
+          timestamp: resultado.timestamp
+        }
+      });
+
+    } catch (error: any) {
+      console.error('❌ Error en uploadHorasExtraDocuments:', error);
+      return res.status(500).json({
+        success: false,
+        message: 'Error al procesar archivos de horas extra',
+        error: error.message || 'Internal server error'
+      });
+    }
+  }
+
+  /**
    * 🔄 PROMESA 2: Upload de archivos para Suplencias
    * Recibe archivos del frontend, los guarda con Multer, indexa en Elasticsearch
    * y devuelve la información necesaria para la Promesa 3 (registro en BD)

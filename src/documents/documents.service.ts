@@ -636,4 +636,182 @@ export class DocumentsService {
       throw new Error(`Error al procesar archivos de suplencia: ${error}`);
     }
   }
+
+  /**
+   * 🔄 PROMESA 2: Subir y procesar archivos para Horas Extra
+   * Este método maneja archivos de horas extra y los guarda en la carpeta del empleado
+   */
+  async uploadHorasExtraDocuments(
+    files: Express.Multer.File[],
+    metadata: {
+      horas_extra_id: string;
+      empleado_id: string;
+      sede_id: string;
+      tipo_documento?: string;
+    }
+  ): Promise<{
+    success: boolean;
+    horas_extra_id: string;
+    total_archivos: number;
+    archivos_procesados: Array<{
+      nombre_original: string;
+      nombre_guardado: string;
+      ruta_relativa: string;
+      tamaño: number;
+      tipo_mime: string;
+      elasticsearch_id?: string;
+    }>;
+    elasticsearch_indexados: number;
+    timestamp: string;
+  }> {
+    try {
+      const currentYear = new Date().getFullYear();
+      const currentMonth = String(new Date().getMonth() + 1).padStart(2, '0');
+      const tipoDocumento = metadata.tipo_documento || 'horas_extra';
+      const archivosProcessados: any[] = [];
+      let elasticsearchIndexados = 0;
+
+      console.log(`📁 Procesando ${files.length} archivos para horas extra ${metadata.horas_extra_id}`);
+      console.log(`👤 Empleado: ${metadata.empleado_id}`);
+      console.log(`🏢 Sede: ${metadata.sede_id}`);
+
+      for (const file of files) {
+        try {
+          const timestamp = Date.now();
+          const extension = path.extname(file.originalname);
+          const baseName = path.basename(file.originalname, extension);
+          
+          // Generar nombre único para el archivo
+          // Formato: horas_extra_YYYYMMDD_HHMMSS_abc123.ext
+          const fecha = new Date();
+          const fechaFormato = `${fecha.getFullYear()}${String(fecha.getMonth() + 1).padStart(2, '0')}${String(fecha.getDate()).padStart(2, '0')}`;
+          const horaFormato = `${String(fecha.getHours()).padStart(2, '0')}${String(fecha.getMinutes()).padStart(2, '0')}${String(fecha.getSeconds()).padStart(2, '0')}`;
+          const randomId = metadata.horas_extra_id.substring(0, 6);
+          
+          const nombreGuardado = `horas_extra_${fechaFormato}_${horaFormato}_${randomId}${extension}`;
+
+          // ===== GUARDAR EN CARPETA DEL EMPLEADO =====
+          // Estructura: uploads/horas_extra/2025/10/archivo.pdf
+          const dirEmpleado = path.join(
+            process.cwd(),
+            'uploads',
+            tipoDocumento,
+            currentYear.toString(),
+            currentMonth
+          );
+
+          if (!fs.existsSync(dirEmpleado)) {
+            fs.mkdirSync(dirEmpleado, { recursive: true });
+          }
+
+          const rutaCompleta = path.join(dirEmpleado, nombreGuardado);
+          const rutaRelativa = path.relative(process.cwd(), rutaCompleta);
+
+          // Copiar archivo a la ubicación final
+          if (fs.existsSync(file.path)) {
+            fs.copyFileSync(file.path, rutaCompleta);
+            console.log(`✅ Archivo guardado: ${rutaRelativa}`);
+
+            // Eliminar archivo temporal original
+            fs.unlinkSync(file.path);
+          }
+
+          // ===== EXTRAER TEXTO SI ES PDF =====
+          let extractedText = '';
+          let keywords: string[] = [];
+
+          if (file.mimetype === 'application/pdf') {
+            try {
+              const buffer = fs.readFileSync(rutaCompleta);
+              const pdfData = await pdfParse(buffer);
+              extractedText = pdfData.text;
+              keywords = this.extractKeywords(extractedText);
+              console.log(`📄 Texto extraído del PDF (${extractedText.length} caracteres)`);
+            } catch (pdfError) {
+              console.warn('⚠️ No se pudo extraer texto del PDF:', pdfError);
+            }
+          }
+
+          // ===== INDEXAR EN ELASTICSEARCH =====
+          let elasticsearchId: string | undefined;
+
+          try {
+            const documentId = uuidv4();
+            
+            const elasticsearchData: ElasticsearchDocumentDto = {
+              id: documentId,
+              title: file.originalname,
+              content: extractedText,
+              keywords,
+              tags: ['horas_extra', tipoDocumento],
+              category: 'horas_extra',
+              employeeUuid: metadata.empleado_id,
+              employeeName: undefined,
+              employeeCedula: undefined,
+              documentType: tipoDocumento,
+              uploadDate: new Date(),
+              year: currentYear,
+              filename: nombreGuardado,
+              mimetype: file.mimetype,
+              size: file.size,
+              relativePath: rutaRelativa,
+              // Metadata adicional para horas extra
+              metadata: {
+                horas_extra_id: metadata.horas_extra_id,
+                empleado_id: metadata.empleado_id,
+                sede_id: metadata.sede_id,
+                tipo: 'horas_extra'
+              }
+            };
+
+            const elasticResult = await this.elasticsearchService.indexDocument(
+              elasticsearchData,
+              documentId,
+              `documents-${currentYear}`
+            );
+
+            if (elasticResult.success) {
+              elasticsearchId = elasticResult.id;
+              elasticsearchIndexados++;
+              console.log(`✅ Documento indexado en Elasticsearch: ${elasticResult.id}`);
+            } else {
+              console.warn('⚠️ No se pudo indexar en Elasticsearch:', elasticResult.error);
+            }
+          } catch (elasticError) {
+            console.warn('⚠️ Error al indexar en Elasticsearch:', elasticError);
+          }
+
+          // ===== AGREGAR A RESULTADOS =====
+          archivosProcessados.push({
+            nombre_original: file.originalname,
+            nombre_guardado: nombreGuardado,
+            ruta_relativa: rutaRelativa.replace(/\\/g, '/'), // Normalizar para Linux/Windows
+            tamaño: file.size,
+            tipo_mime: file.mimetype,
+            elasticsearch_id: elasticsearchId
+          });
+
+        } catch (fileError) {
+          console.error(`❌ Error procesando archivo ${file.originalname}:`, fileError);
+          throw fileError;
+        }
+      }
+
+      console.log(`✅ Total procesados: ${archivosProcessados.length} archivos`);
+      console.log(`🔍 Indexados en Elasticsearch: ${elasticsearchIndexados} archivos`);
+
+      return {
+        success: true,
+        horas_extra_id: metadata.horas_extra_id,
+        total_archivos: archivosProcessados.length,
+        archivos_procesados: archivosProcessados,
+        elasticsearch_indexados: elasticsearchIndexados,
+        timestamp: new Date().toISOString()
+      };
+
+    } catch (error) {
+      console.error('❌ Error en uploadHorasExtraDocuments:', error);
+      throw new Error(`Error al procesar archivos de horas extra: ${error}`);
+    }
+  }
 }

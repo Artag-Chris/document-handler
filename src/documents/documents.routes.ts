@@ -38,6 +38,14 @@ export class DocumentsRoutes {
       documentsController.uploadSuplenciaDocuments
     );
 
+    // 🔄 PROMESA 2: Upload de archivos para Horas Extra
+    // Recibe archivos con nombre de campo 'files', los guarda en carpeta del empleado,
+    // indexa en Elasticsearch y devuelve info para Promesa 3
+    router.post('/upload/horas-extra',
+      uploadSuplenciaFiles,  // Usa mismo middleware que espera campo 'files'
+      documentsController.uploadHorasExtraDocuments
+    );
+
     // Obtener todos los documentos
     router.get('/', documentsController.getAllDocuments);
 

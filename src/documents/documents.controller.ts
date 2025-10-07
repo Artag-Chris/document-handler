@@ -451,4 +451,102 @@ export class DocumentsController {
     }
   };
 
+  /**
+   * 🔄 PROMESA 2: Upload de archivos para Actos Administrativos
+   * Recibe archivos del frontend, los guarda con Multer, indexa en Elasticsearch
+   * y devuelve la información necesaria para la Promesa 3 (registro en BD)
+   */
+  uploadActosAdministrativosDocuments = async (req: Request, res: Response) => {
+    try {
+      console.log('📥 Request recibido en uploadActosAdministrativosDocuments');
+      console.log('📋 Body:', req.body);
+      console.log('📎 Files:', req.files ? (Array.isArray(req.files) ? `${req.files.length} archivos` : 'Files object') : 'No files');
+      
+      // Verificar que haya archivos
+      if (!req.files || !Array.isArray(req.files) || req.files.length === 0) {
+        console.warn('⚠️ No se recibieron archivos en el request');
+        return res.status(400).json({
+          success: false,
+          message: 'No se han proporcionado archivos. Asegúrate de enviar archivos con el campo "files" (plural)',
+          error: 'No files uploaded',
+          hint: 'El FormData debe incluir: formData.append("files", archivo)'
+        });
+      }
+
+      // Extraer datos del body
+      const { 
+        acto_administrativo_id,
+        institucion_educativa_id,
+        tipo_documento = 'acto_administrativo' 
+      } = req.body;
+
+      // Validar datos requeridos
+      if (!acto_administrativo_id) {
+        return res.status(400).json({
+          success: false,
+          message: 'acto_administrativo_id es requerido',
+          error: 'Missing acto_administrativo_id'
+        });
+      }
+
+      if (!institucion_educativa_id) {
+        return res.status(400).json({
+          success: false,
+          message: 'institucion_educativa_id es requerido',
+          error: 'Missing institucion_educativa_id'
+        });
+      }
+
+      if (tipo_documento !== 'acto_administrativo') {
+        return res.status(400).json({
+          success: false,
+          message: 'tipo_documento debe ser "acto_administrativo"',
+          error: 'Invalid tipo_documento',
+          received: tipo_documento
+        });
+      }
+
+      console.log(`✅ Datos validados - Acto: ${acto_administrativo_id}, Institución: ${institucion_educativa_id}`);
+      console.log(`📂 Procesando ${req.files.length} archivo(s)...`);
+
+      // Llamar al servicio para procesar los archivos
+      const result = await this.documentsService.uploadActosAdministrativosDocuments(
+        req.files as Express.Multer.File[],
+        {
+          acto_administrativo_id,
+          institucion_educativa_id,
+          tipo_documento
+        }
+      );
+
+      // Devolver respuesta exitosa
+      console.log('✅ Archivos procesados exitosamente');
+      return res.status(200).json({
+        success: true,
+        message: 'Archivos subidos exitosamente',
+        data: {
+          archivos_procesados: result.archivos_procesados,
+          total_archivos: result.total_archivos,
+          elasticsearch_indexados: result.elasticsearch_indexados,
+          acto_administrativo_id: result.acto_administrativo_id,
+          institucion_educativa_id: result.institucion_educativa_id,
+          timestamp: result.timestamp
+        }
+      });
+
+    } catch (error) {
+      console.error('❌ Error en uploadActosAdministrativosDocuments:', error);
+      
+      // Determinar tipo de error
+      const errorMessage = error instanceof Error ? error.message : 'Error desconocido';
+      
+      return res.status(500).json({
+        success: false,
+        message: 'Error al procesar los archivos',
+        error: errorMessage,
+        details: error instanceof Error ? error.stack : undefined
+      });
+    }
+  };
+
 }

@@ -814,4 +814,193 @@ export class DocumentsService {
       throw new Error(`Error al procesar archivos de horas extra: ${error}`);
     }
   }
+
+  /**
+   * 🔄 PROMESA 2: Subir y procesar archivos para Actos Administrativos
+   * Este método maneja archivos de actos administrativos y los guarda en una carpeta
+   * organizada por año e institución educativa
+   */
+  async uploadActosAdministrativosDocuments(
+    files: Express.Multer.File[],
+    metadata: {
+      acto_administrativo_id: string;
+      institucion_educativa_id: string;
+      tipo_documento: string;
+    }
+  ) {
+    try {
+      console.log('📁 Iniciando uploadActosAdministrativosDocuments...');
+      console.log(`📊 Metadata recibida:`, metadata);
+      console.log(`📂 Total de archivos a procesar: ${files.length}`);
+
+      const archivosProcessados: any[] = [];
+      let elasticsearchIndexados = 0;
+
+      // ===== CONFIGURACIÓN DE DIRECTORIOS =====
+      const currentYear = new Date().getFullYear();
+      const { acto_administrativo_id, institucion_educativa_id, tipo_documento } = metadata;
+
+      // Directorio: uploads/actos_administrativos/YYYY/uuid-institucion/
+      const directorioBase = path.join(
+        process.cwd(),
+        'uploads',
+        'actos_administrativos',
+        currentYear.toString(),
+        institucion_educativa_id
+      );
+
+      // Crear directorio si no existe
+      if (!fs.existsSync(directorioBase)) {
+        fs.mkdirSync(directorioBase, { recursive: true });
+        console.log(`📁 Directorio creado: ${directorioBase}`);
+      } else {
+        console.log(`✅ Directorio ya existe: ${directorioBase}`);
+      }
+
+      // ===== PROCESAR CADA ARCHIVO =====
+      for (const file of files) {
+        try {
+          console.log(`\n📄 Procesando archivo: ${file.originalname}`);
+          
+          // ===== VALIDACIÓN DE ARCHIVO =====
+          if (!file.originalname || file.size === 0) {
+            console.warn(`⚠️ Archivo inválido: ${file.originalname}`);
+            continue;
+          }
+
+          // Validar tamaño (10MB max)
+          const MAX_SIZE = 10 * 1024 * 1024; // 10MB
+          if (file.size > MAX_SIZE) {
+            throw new Error(`Archivo muy grande: ${file.originalname} (${(file.size / 1024 / 1024).toFixed(2)}MB). Máximo: 10MB`);
+          }
+
+          // ===== GENERAR NOMBRE ÚNICO =====
+          const timestamp = Date.now();
+          const sanitizedName = file.originalname
+            .replace(/[^a-zA-Z0-9._-]/g, '_')
+            .replace(/_{2,}/g, '_');
+          const nombreGuardado = `${timestamp}_${sanitizedName}`;
+
+          // ===== RUTA COMPLETA Y RELATIVA =====
+          const rutaCompleta = path.join(directorioBase, nombreGuardado);
+          const rutaRelativa = path.join(
+            'actos_administrativos',
+            currentYear.toString(),
+            institucion_educativa_id,
+            nombreGuardado
+          );
+
+          console.log(`💾 Guardando en: ${rutaCompleta}`);
+
+          // ===== MOVER ARCHIVO =====
+          if (file.path) {
+            // Si el archivo ya está en el sistema (multer lo guardó en temp)
+            fs.renameSync(file.path, rutaCompleta);
+            console.log(`✅ Archivo movido desde temp a destino final`);
+          } else if (file.buffer) {
+            // Si el archivo está en memoria (buffer)
+            fs.writeFileSync(rutaCompleta, file.buffer);
+            console.log(`✅ Archivo escrito desde buffer`);
+          } else {
+            throw new Error('El archivo no tiene path ni buffer');
+          }
+
+          // ===== EXTRACCIÓN DE TEXTO (SI ES PDF) =====
+          let textContent = '';
+          let elasticsearchId: string | null = null;
+
+          if (file.mimetype === 'application/pdf') {
+            try {
+              console.log('📖 Extrayendo texto del PDF...');
+              const dataBuffer = fs.readFileSync(rutaCompleta);
+              const pdfData = await pdfParse(dataBuffer);
+              textContent = pdfData.text || '';
+              console.log(`✅ Texto extraído: ${textContent.length} caracteres`);
+            } catch (pdfError) {
+              console.warn('⚠️ No se pudo extraer texto del PDF:', pdfError);
+              textContent = '';
+            }
+          }
+
+          // ===== INDEXAR EN ELASTICSEARCH =====
+          try {
+            console.log('🔍 Indexando en Elasticsearch...');
+            const documentId = `acto_admin_${acto_administrativo_id}_${timestamp}`;
+
+            const elasticsearchData: ElasticsearchDocumentDto = {
+              id: documentId,
+              title: file.originalname,
+              content: textContent,
+              category: 'actos_administrativos',
+              tags: ['acto_administrativo', tipo_documento],
+              keywords: [file.originalname, tipo_documento, 'acto', 'administrativo'],
+              employeeUuid: institucion_educativa_id, // Usar institucion_educativa_id como identificador
+              documentType: tipo_documento,
+              uploadDate: new Date(),
+              year: currentYear,
+              filename: nombreGuardado,
+              mimetype: file.mimetype,
+              size: file.size,
+              relativePath: rutaRelativa,
+              // Metadata adicional para actos administrativos
+              metadata: {
+                acto_administrativo_id,
+                institucion_educativa_id,
+                tipo: 'acto_administrativo'
+              }
+            };
+
+            const elasticResult = await this.elasticsearchService.indexDocument(
+              elasticsearchData,
+              documentId,
+              `documents-${currentYear}`
+            );
+
+            if (elasticResult.success && elasticResult.id) {
+              elasticsearchId = elasticResult.id;
+              elasticsearchIndexados++;
+              console.log(`✅ Documento indexado en Elasticsearch: ${elasticResult.id}`);
+            } else {
+              console.warn('⚠️ No se pudo indexar en Elasticsearch:', elasticResult.error);
+            }
+          } catch (elasticError) {
+            console.warn('⚠️ Error al indexar en Elasticsearch:', elasticError);
+          }
+
+          // ===== AGREGAR A RESULTADOS =====
+          archivosProcessados.push({
+            nombre_original: file.originalname,
+            nombre_guardado: nombreGuardado,
+            ruta_relativa: rutaRelativa.replace(/\\/g, '/'), // Normalizar para Linux/Windows
+            tamano: file.size,
+            tipo_mime: file.mimetype,
+            elasticsearch_id: elasticsearchId
+          });
+
+          console.log(`✅ Archivo procesado: ${file.originalname}`);
+
+        } catch (fileError) {
+          console.error(`❌ Error procesando archivo ${file.originalname}:`, fileError);
+          throw fileError;
+        }
+      }
+
+      console.log(`\n✅ Total procesados: ${archivosProcessados.length} archivos`);
+      console.log(`🔍 Indexados en Elasticsearch: ${elasticsearchIndexados} archivos`);
+
+      return {
+        success: true,
+        acto_administrativo_id,
+        institucion_educativa_id,
+        total_archivos: archivosProcessados.length,
+        archivos_procesados: archivosProcessados,
+        elasticsearch_indexados: elasticsearchIndexados,
+        timestamp: new Date().toISOString()
+      };
+
+    } catch (error) {
+      console.error('❌ Error en uploadActosAdministrativosDocuments:', error);
+      throw new Error(`Error al procesar archivos de actos administrativos: ${error}`);
+    }
+  }
 }

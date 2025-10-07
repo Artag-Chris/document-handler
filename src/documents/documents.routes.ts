@@ -46,6 +46,14 @@ export class DocumentsRoutes {
       documentsController.uploadHorasExtraDocuments
     );
 
+    // 🔄 PROMESA 2: Upload de archivos para Actos Administrativos
+    // Recibe archivos con nombre de campo 'files', los guarda en carpeta de la institución,
+    // indexa en Elasticsearch y devuelve info para Promesa 3
+    router.post('/upload/actos-administrativos',
+      uploadSuplenciaFiles,  // Usa mismo middleware que espera campo 'files'
+      documentsController.uploadActosAdministrativosDocuments
+    );
+
     // Obtener todos los documentos
     router.get('/', documentsController.getAllDocuments);
 

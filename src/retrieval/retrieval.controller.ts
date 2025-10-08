@@ -1,5 +1,7 @@
 import { Request, Response } from 'express';
 import { RetrievalService } from './retrieval.service';
+import { existsSync, statSync, createReadStream } from 'fs';
+import { join, basename, extname } from 'path';
 
 export class RetrievalController {
   constructor(
@@ -657,6 +659,399 @@ export class RetrievalController {
       console.error('Error in getDocumentStats:', error);
       res.status(500).json({
         error: 'Error interno del servidor al obtener estadísticas de documentos'
+      });
+    }
+  };
+
+  /**
+   * 🔍 DESCARGA AVANZADA: Busca el documento en todas las ubicaciones posibles
+   * Ubicaciones: Suplencias, Actos Administrativos, Horas Extra, carpetas de empleados
+   */
+  downloadDocumentAdvanced = async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+      
+      console.log(`\n🚀 Descarga avanzada solicitada para documento: ${id}`);
+      
+      const result = await this.retrievalService.findDocumentInAllLocations(id);
+
+      if (!result) {
+        console.log(`❌ Documento ${id} no encontrado en ninguna ubicación`);
+        return res.status(404).json({
+          success: false,
+          error: 'Documento no encontrado',
+          message: 'El documento no se encuentra en ninguna ubicación del sistema',
+          documentId: id
+        });
+      }
+
+      const { filePath, document, location } = result;
+
+      console.log(`✅ Documento encontrado en: ${location}`);
+      console.log(`📂 Ruta: ${filePath}`);
+
+      // Configurar headers para descarga
+      res.setHeader('Content-Disposition', `attachment; filename="${document.originalName}"`);
+      res.setHeader('Content-Type', document.mimetype);
+      res.setHeader('Content-Length', document.size);
+      res.setHeader('X-Document-Location', location); // Header personalizado con la ubicación
+
+      // Enviar el archivo
+      res.sendFile(filePath, (err) => {
+        if (err) {
+          console.error('❌ Error enviando archivo:', err);
+          if (!res.headersSent) {
+            res.status(500).json({
+              success: false,
+              error: 'Error al enviar el archivo',
+              message: err.message
+            });
+          }
+        } else {
+          console.log(`✅ Archivo enviado exitosamente: ${document.originalName}`);
+        }
+      });
+    } catch (error) {
+      console.error('❌ Error in downloadDocumentAdvanced:', error);
+      
+      const errorMessage = error instanceof Error ? error.message : 'Error desconocido';
+      
+      if (!res.headersSent) {
+        res.status(500).json({
+          success: false,
+          error: 'Error interno del servidor',
+          message: errorMessage,
+          details: error instanceof Error ? error.stack : undefined
+        });
+      }
+    }
+  };
+
+  /**
+   * 👁️ VISUALIZACIÓN AVANZADA: Muestra el documento en todas las ubicaciones posibles
+   * Ideal para PDFs - Se muestra inline en el navegador
+   */
+  viewDocumentAdvanced = async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+      
+      console.log(`\n👁️ Visualización avanzada solicitada para documento: ${id}`);
+      
+      const result = await this.retrievalService.findDocumentInAllLocations(id);
+
+      if (!result) {
+        console.log(`❌ Documento ${id} no encontrado en ninguna ubicación`);
+        return res.status(404).json({
+          success: false,
+          error: 'Documento no encontrado',
+          message: 'El documento no se encuentra en ninguna ubicación del sistema',
+          documentId: id
+        });
+      }
+
+      const { filePath, document, location } = result;
+
+      console.log(`✅ Documento encontrado en: ${location}`);
+      console.log(`📂 Ruta: ${filePath}`);
+
+      // Configurar headers para visualización
+      res.setHeader('Content-Type', document.mimetype);
+      res.setHeader('Content-Length', document.size);
+      res.setHeader('X-Document-Location', location); // Header personalizado con la ubicación
+      
+      // Para PDFs, permitir visualización en el navegador
+      if (document.mimetype === 'application/pdf') {
+        res.setHeader('Content-Disposition', `inline; filename="${document.originalName}"`);
+      } else {
+        // Para otros tipos, descargar
+        res.setHeader('Content-Disposition', `attachment; filename="${document.originalName}"`);
+      }
+
+      // Enviar el archivo
+      res.sendFile(filePath, (err) => {
+        if (err) {
+          console.error('❌ Error enviando archivo:', err);
+          if (!res.headersSent) {
+            res.status(500).json({
+              success: false,
+              error: 'Error al enviar el archivo',
+              message: err.message
+            });
+          }
+        } else {
+          console.log(`✅ Archivo visualizado exitosamente: ${document.originalName}`);
+        }
+      });
+    } catch (error) {
+      console.error('❌ Error in viewDocumentAdvanced:', error);
+      
+      const errorMessage = error instanceof Error ? error.message : 'Error desconocido';
+      
+      if (!res.headersSent) {
+        res.status(500).json({
+          success: false,
+          error: 'Error interno del servidor',
+          message: errorMessage,
+          details: error instanceof Error ? error.stack : undefined
+        });
+      }
+    }
+  };
+
+  /**
+   * 📍 INFO DE DOCUMENTO: Obtiene información sobre dónde se encuentra el documento
+   */
+  getDocumentLocationInfo = async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+      
+      console.log(`\n📍 Información de ubicación solicitada para: ${id}`);
+      
+      const result = await this.retrievalService.findDocumentInAllLocations(id);
+
+      if (!result) {
+        return res.status(404).json({
+          success: false,
+          error: 'Documento no encontrado',
+          documentId: id
+        });
+      }
+
+      const { filePath, document, location } = result;
+      const urls = this.generateDownloadUrls(id, req);
+
+      res.json({
+        success: true,
+        document: {
+          id: document.id,
+          title: document.title,
+          filename: document.filename,
+          originalName: document.originalName,
+          size: document.size,
+          mimetype: document.mimetype,
+          uploadDate: document.uploadDate,
+          category: document.category,
+          documentType: document.documentType,
+          employeeUuid: document.employeeUuid,
+          employeeName: document.employeeName
+        },
+        location: {
+          description: location,
+          fullPath: filePath,
+          exists: true
+        },
+        urls: {
+          download: `${urls.downloadUrl}/advanced`,
+          view: urls.viewUrl.replace('/view/', '/view-advanced/'),
+          downloadStandard: urls.downloadUrl,
+          viewStandard: urls.viewUrl
+        }
+      });
+    } catch (error) {
+      console.error('❌ Error in getDocumentLocationInfo:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Error interno del servidor',
+        message: error instanceof Error ? error.message : 'Error desconocido'
+      });
+    }
+  };
+
+  /**
+   * 📥 DESCARGA POR RUTA RELATIVA: Descarga directa usando la ruta relativa del documento
+   * Endpoint: POST /retrieval/download-by-path
+   * Body: { relativePath: "uploads/2025/uuid/suplencias/file.pdf" }
+   */
+  downloadByPath = async (req: Request, res: Response) => {
+    try {
+      const { relativePath } = req.body;
+
+      if (!relativePath) {
+        return res.status(400).json({
+          success: false,
+          error: 'Ruta relativa requerida',
+          message: 'Debes proporcionar el campo "relativePath" en el body'
+        });
+      }
+
+      console.log(`\n📥 Descarga por ruta solicitada: ${relativePath}`);
+
+      // Normalizar la ruta: agregar 'uploads/' si no está presente
+      let normalizedPath = relativePath;
+      if (!relativePath.startsWith('uploads/')) {
+        normalizedPath = `uploads/${relativePath}`;
+        console.log(`🔧 Ruta normalizada: ${normalizedPath}`);
+      }
+
+      // Construir ruta absoluta desde la raíz del proyecto
+      const baseDir = process.cwd();
+      const fullPath = join(baseDir, normalizedPath);
+
+      console.log(`📂 Ruta completa: ${fullPath}`);
+
+      // Verificar que el archivo existe
+      if (!existsSync(fullPath)) {
+        console.log(`❌ Archivo no encontrado en: ${fullPath}`);
+        return res.status(404).json({
+          success: false,
+          error: 'Archivo no encontrado',
+          message: `No se encontró el archivo en la ruta: ${relativePath}`,
+          fullPath
+        });
+      }
+
+      // Verificar que es un archivo (no directorio)
+      const stats = statSync(fullPath);
+      if (!stats.isFile()) {
+        console.log(`❌ La ruta no es un archivo: ${fullPath}`);
+        return res.status(400).json({
+          success: false,
+          error: 'Ruta inválida',
+          message: 'La ruta proporcionada no es un archivo'
+        });
+      }
+
+      // Extraer nombre del archivo
+      const filename = basename(fullPath);
+      
+      console.log(`✅ Archivo encontrado: ${filename} (${stats.size} bytes)`);
+
+      // Headers para descarga
+      res.setHeader('Content-Type', 'application/octet-stream');
+      res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(filename)}"`);
+      res.setHeader('Content-Length', stats.size);
+      res.setHeader('X-File-Path', normalizedPath); // Usar ruta normalizada
+
+      // Stream del archivo
+      const fileStream = createReadStream(fullPath);
+      
+      fileStream.on('error', (err) => {
+        console.error('❌ Error streaming archivo:', err);
+        if (!res.headersSent) {
+          res.status(500).json({
+            success: false,
+            error: 'Error al leer el archivo',
+            message: err.message
+          });
+        }
+      });
+
+      fileStream.pipe(res);
+      
+      console.log(`📤 Enviando archivo: ${filename}`);
+      
+    } catch (error) {
+      console.error('❌ Error in downloadByPath:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Error interno del servidor',
+        message: error instanceof Error ? error.message : 'Error desconocido'
+      });
+    }
+  };
+
+  /**
+   * 👁️ VISUALIZACIÓN POR RUTA RELATIVA: Muestra el documento usando la ruta relativa
+   * Endpoint: POST /retrieval/view-by-path
+   * Body: { relativePath: "uploads/2025/uuid/suplencias/file.pdf" }
+   */
+  viewByPath = async (req: Request, res: Response) => {
+    try {
+      const { relativePath } = req.body;
+
+      if (!relativePath) {
+        return res.status(400).json({
+          success: false,
+          error: 'Ruta relativa requerida',
+          message: 'Debes proporcionar el campo "relativePath" en el body'
+        });
+      }
+
+      console.log(`\n👁️ Visualización por ruta solicitada: ${relativePath}`);
+
+      // Normalizar la ruta: agregar 'uploads/' si no está presente
+      let normalizedPath = relativePath;
+      if (!relativePath.startsWith('uploads/')) {
+        normalizedPath = `uploads/${relativePath}`;
+        console.log(`🔧 Ruta normalizada: ${normalizedPath}`);
+      }
+
+      // Construir ruta absoluta
+      const baseDir = process.cwd();
+      const fullPath = join(baseDir, normalizedPath);
+
+      console.log(`📂 Ruta completa: ${fullPath}`);
+
+      // Verificar que el archivo existe
+      if (!existsSync(fullPath)) {
+        console.log(`❌ Archivo no encontrado en: ${fullPath}`);
+        return res.status(404).json({
+          success: false,
+          error: 'Archivo no encontrado',
+          message: `No se encontró el archivo en la ruta: ${relativePath}`,
+          fullPath
+        });
+      }
+
+      // Verificar que es un archivo
+      const stats = statSync(fullPath);
+      if (!stats.isFile()) {
+        console.log(`❌ La ruta no es un archivo: ${fullPath}`);
+        return res.status(400).json({
+          success: false,
+          error: 'Ruta inválida',
+          message: 'La ruta proporcionada no es un archivo'
+        });
+      }
+
+      // Extraer nombre y extensión
+      const filename = basename(fullPath);
+      const ext = extname(fullPath).toLowerCase();
+      
+      console.log(`✅ Archivo encontrado: ${filename} (${stats.size} bytes)`);
+
+      // Determinar Content-Type
+      let contentType = 'application/octet-stream';
+      if (ext === '.pdf') {
+        contentType = 'application/pdf';
+      } else if (ext === '.jpg' || ext === '.jpeg') {
+        contentType = 'image/jpeg';
+      } else if (ext === '.png') {
+        contentType = 'image/png';
+      } else if (ext === '.gif') {
+        contentType = 'image/gif';
+      }
+
+      // Headers para visualización inline
+      res.setHeader('Content-Type', contentType);
+      res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(filename)}"`);
+      res.setHeader('Content-Length', stats.size);
+      res.setHeader('X-File-Path', normalizedPath); // Usar ruta normalizada
+
+      // Stream del archivo
+      const fileStream = createReadStream(fullPath);
+      
+      fileStream.on('error', (err) => {
+        console.error('❌ Error streaming archivo:', err);
+        if (!res.headersSent) {
+          res.status(500).json({
+            success: false,
+            error: 'Error al leer el archivo',
+            message: err.message
+          });
+        }
+      });
+
+      fileStream.pipe(res);
+      
+      console.log(`📤 Mostrando archivo: ${filename}`);
+      
+    } catch (error) {
+      console.error('❌ Error in viewByPath:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Error interno del servidor',
+        message: error instanceof Error ? error.message : 'Error desconocido'
       });
     }
   };

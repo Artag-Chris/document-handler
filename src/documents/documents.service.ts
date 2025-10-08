@@ -53,15 +53,15 @@ export class DocumentsService {
       const baseName = path.basename(file.originalname, extension);
       const employeeCedula = metadata.employeeCedula || metadata.employeeUuid.substring(0, 8);
       const newFileName = `${currentYear}_${employeeCedula}_${documentType}_${timestamp}_${baseName}${extension}`;
-      
+
       const targetPath = path.join(targetDir, newFileName);
 
       fs.renameSync(file.path, targetPath);
-      
+
       return targetPath;
     } catch (error) {
       console.error('❌ Error moviendo archivo:', error);
-      return file.path; 
+      return file.path;
     }
   }
 
@@ -188,14 +188,14 @@ export class DocumentsService {
 
       // Eliminar de memoria
       this.documents.delete(id);
-      
+
       // Intentar eliminar de Elasticsearch
       try {
         await this.elasticsearchService.deleteDocument(id, `documents-${document.year}`);
       } catch (error) {
         console.warn('⚠️ Error eliminando de Elasticsearch:', error);
       }
-      
+
       return true;
     } catch (error) {
       console.error('Error deleting document:', error);
@@ -208,7 +208,7 @@ export class DocumentsService {
     //debere exportarlo
     const stopWords = new Set([
       // Español
-      'que', 'con', 'para', 'una', 'del', 'las', 'los', 'por', 'como', 'pero', 
+      'que', 'con', 'para', 'una', 'del', 'las', 'los', 'por', 'como', 'pero',
       'sus', 'por', 'ser', 'han', 'son', 'fue', 'año', 'años', 'muy', 'más',
       'este', 'esta', 'estos', 'estas', 'todo', 'todos', 'toda', 'todas',
       'entre', 'sobre', 'desde', 'hasta', 'hacia', 'aunque', 'cuando', 'donde',
@@ -242,8 +242,8 @@ export class DocumentsService {
     // 2.1. Palabras individuales (4+ caracteres)
     const individualWords = cleanText
       .split(/\s+/)
-      .filter(word => 
-        word.length >= 4 && 
+      .filter(word =>
+        word.length >= 4 &&
         !stopWords.has(word) &&
         !/^\d+$/.test(word) && // No solo números
         /[a-zA-Z]/.test(word) // Debe contener al menos una letra
@@ -360,7 +360,7 @@ export class DocumentsService {
 
     if (query.text) {
       const searchText = query.text.toLowerCase();
-      results = results.filter(doc => 
+      results = results.filter(doc =>
         doc.title?.toLowerCase().includes(searchText) ||
         doc.description?.toLowerCase().includes(searchText) ||
         doc.extractedText?.toLowerCase().includes(searchText) ||
@@ -373,7 +373,7 @@ export class DocumentsService {
     }
 
     if (query.tags && query.tags.length > 0) {
-      results = results.filter(doc => 
+      results = results.filter(doc =>
         doc.tags?.some(tag => query.tags!.includes(tag))
       );
     }
@@ -469,16 +469,12 @@ export class DocumentsService {
       const archivosProcessados: any[] = [];
       let elasticsearchIndexados = 0;
 
-      console.log(`📁 Procesando ${files.length} archivos para suplencia ${metadata.suplencia_id}`);
-      console.log(`👤 Docente ausente: ${metadata.docente_ausente_id}`);
-      console.log(`👤 Docente reemplazo: ${metadata.docente_reemplazo_id}`);
-
       for (const file of files) {
         try {
           const timestamp = Date.now();
           const extension = path.extname(file.originalname);
           const baseName = path.basename(file.originalname, extension);
-          
+
           // Generar nombre único para el archivo
           const nombreGuardado = `${currentYear}_suplencia_${metadata.suplencia_id.substring(0, 8)}_${timestamp}_${baseName}${extension}`;
 
@@ -518,11 +514,9 @@ export class DocumentsService {
           if (fs.existsSync(file.path)) {
             // Copiar a carpeta del docente ausente
             fs.copyFileSync(file.path, rutaCompletaAusente);
-            console.log(`✅ Archivo copiado a docente ausente: ${rutaRelativaAusente}`);
 
             // Copiar a carpeta del docente reemplazo
             fs.copyFileSync(file.path, rutaCompletaReemplazo);
-            console.log(`✅ Archivo copiado a docente reemplazo: ${rutaRelativaReemplazo}`);
 
             // Eliminar archivo temporal original
             fs.unlinkSync(file.path);
@@ -538,7 +532,6 @@ export class DocumentsService {
               const pdfData = await pdfParse(buffer);
               extractedText = pdfData.text;
               keywords = this.extractKeywords(extractedText);
-              console.log(`📄 Texto extraído del PDF (${extractedText.length} caracteres)`);
             } catch (pdfError) {
               console.warn('⚠️ No se pudo extraer texto del PDF:', pdfError);
             }
@@ -549,7 +542,7 @@ export class DocumentsService {
 
           try {
             const documentId = uuidv4();
-            
+
             const elasticsearchData: ElasticsearchDocumentDto = {
               id: documentId,
               title: file.originalname,
@@ -585,7 +578,7 @@ export class DocumentsService {
             if (elasticResult.success) {
               elasticsearchId = elasticResult.id;
               elasticsearchIndexados++;
-              console.log(`✅ Documento indexado en Elasticsearch: ${elasticResult.id}`);
+
             } else {
               console.warn('⚠️ No se pudo indexar en Elasticsearch:', elasticResult.error);
             }
@@ -619,8 +612,7 @@ export class DocumentsService {
         }
       }
 
-      console.log(`✅ Total procesados: ${archivosProcessados.length} archivos`);
-      console.log(`🔍 Indexados en Elasticsearch: ${elasticsearchIndexados} archivos`);
+
 
       return {
         success: true,
@@ -671,23 +663,19 @@ export class DocumentsService {
       const archivosProcessados: any[] = [];
       let elasticsearchIndexados = 0;
 
-      console.log(`📁 Procesando ${files.length} archivos para horas extra ${metadata.horas_extra_id}`);
-      console.log(`👤 Empleado: ${metadata.empleado_id}`);
-      console.log(`🏢 Sede: ${metadata.sede_id}`);
-
       for (const file of files) {
         try {
           const timestamp = Date.now();
           const extension = path.extname(file.originalname);
           const baseName = path.basename(file.originalname, extension);
-          
+
           // Generar nombre único para el archivo
           // Formato: horas_extra_YYYYMMDD_HHMMSS_abc123.ext
           const fecha = new Date();
           const fechaFormato = `${fecha.getFullYear()}${String(fecha.getMonth() + 1).padStart(2, '0')}${String(fecha.getDate()).padStart(2, '0')}`;
           const horaFormato = `${String(fecha.getHours()).padStart(2, '0')}${String(fecha.getMinutes()).padStart(2, '0')}${String(fecha.getSeconds()).padStart(2, '0')}`;
           const randomId = metadata.horas_extra_id.substring(0, 6);
-          
+
           const nombreGuardado = `horas_extra_${fechaFormato}_${horaFormato}_${randomId}${extension}`;
 
           // ===== GUARDAR EN CARPETA DEL EMPLEADO =====
@@ -710,7 +698,7 @@ export class DocumentsService {
           // Copiar archivo a la ubicación final
           if (fs.existsSync(file.path)) {
             fs.copyFileSync(file.path, rutaCompleta);
-            console.log(`✅ Archivo guardado: ${rutaRelativa}`);
+
 
             // Eliminar archivo temporal original
             fs.unlinkSync(file.path);
@@ -726,7 +714,6 @@ export class DocumentsService {
               const pdfData = await pdfParse(buffer);
               extractedText = pdfData.text;
               keywords = this.extractKeywords(extractedText);
-              console.log(`📄 Texto extraído del PDF (${extractedText.length} caracteres)`);
             } catch (pdfError) {
               console.warn('⚠️ No se pudo extraer texto del PDF:', pdfError);
             }
@@ -737,7 +724,7 @@ export class DocumentsService {
 
           try {
             const documentId = uuidv4();
-            
+
             const elasticsearchData: ElasticsearchDocumentDto = {
               id: documentId,
               title: file.originalname,
@@ -797,9 +784,6 @@ export class DocumentsService {
         }
       }
 
-      console.log(`✅ Total procesados: ${archivosProcessados.length} archivos`);
-      console.log(`🔍 Indexados en Elasticsearch: ${elasticsearchIndexados} archivos`);
-
       return {
         success: true,
         horas_extra_id: metadata.horas_extra_id,
@@ -829,9 +813,6 @@ export class DocumentsService {
     }
   ) {
     try {
-      console.log('📁 Iniciando uploadActosAdministrativosDocuments...');
-      console.log(`📊 Metadata recibida:`, metadata);
-      console.log(`📂 Total de archivos a procesar: ${files.length}`);
 
       const archivosProcessados: any[] = [];
       let elasticsearchIndexados = 0;
@@ -852,7 +833,7 @@ export class DocumentsService {
       // Crear directorio si no existe
       if (!fs.existsSync(directorioBase)) {
         fs.mkdirSync(directorioBase, { recursive: true });
-        console.log(`📁 Directorio creado: ${directorioBase}`);
+
       } else {
         console.log(`✅ Directorio ya existe: ${directorioBase}`);
       }
@@ -860,8 +841,8 @@ export class DocumentsService {
       // ===== PROCESAR CADA ARCHIVO =====
       for (const file of files) {
         try {
-          console.log(`\n📄 Procesando archivo: ${file.originalname}`);
-          
+
+
           // ===== VALIDACIÓN DE ARCHIVO =====
           if (!file.originalname || file.size === 0) {
             console.warn(`⚠️ Archivo inválido: ${file.originalname}`);
@@ -890,17 +871,17 @@ export class DocumentsService {
             nombreGuardado
           );
 
-          console.log(`💾 Guardando en: ${rutaCompleta}`);
+
 
           // ===== MOVER ARCHIVO =====
           if (file.path) {
             // Si el archivo ya está en el sistema (multer lo guardó en temp)
             fs.renameSync(file.path, rutaCompleta);
-            console.log(`✅ Archivo movido desde temp a destino final`);
+
           } else if (file.buffer) {
             // Si el archivo está en memoria (buffer)
             fs.writeFileSync(rutaCompleta, file.buffer);
-            console.log(`✅ Archivo escrito desde buffer`);
+
           } else {
             throw new Error('El archivo no tiene path ni buffer');
           }
@@ -911,11 +892,11 @@ export class DocumentsService {
 
           if (file.mimetype === 'application/pdf') {
             try {
-              console.log('📖 Extrayendo texto del PDF...');
+
               const dataBuffer = fs.readFileSync(rutaCompleta);
               const pdfData = await pdfParse(dataBuffer);
               textContent = pdfData.text || '';
-              console.log(`✅ Texto extraído: ${textContent.length} caracteres`);
+
             } catch (pdfError) {
               console.warn('⚠️ No se pudo extraer texto del PDF:', pdfError);
               textContent = '';
@@ -924,7 +905,7 @@ export class DocumentsService {
 
           // ===== INDEXAR EN ELASTICSEARCH =====
           try {
-            console.log('🔍 Indexando en Elasticsearch...');
+
             const documentId = `acto_admin_${acto_administrativo_id}_${timestamp}`;
 
             const elasticsearchData: ElasticsearchDocumentDto = {
@@ -959,7 +940,7 @@ export class DocumentsService {
             if (elasticResult.success && elasticResult.id) {
               elasticsearchId = elasticResult.id;
               elasticsearchIndexados++;
-              console.log(`✅ Documento indexado en Elasticsearch: ${elasticResult.id}`);
+
             } else {
               console.warn('⚠️ No se pudo indexar en Elasticsearch:', elasticResult.error);
             }
@@ -977,16 +958,13 @@ export class DocumentsService {
             elasticsearch_id: elasticsearchId
           });
 
-          console.log(`✅ Archivo procesado: ${file.originalname}`);
+
 
         } catch (fileError) {
           console.error(`❌ Error procesando archivo ${file.originalname}:`, fileError);
           throw fileError;
         }
       }
-
-      console.log(`\n✅ Total procesados: ${archivosProcessados.length} archivos`);
-      console.log(`🔍 Indexados en Elasticsearch: ${elasticsearchIndexados} archivos`);
 
       return {
         success: true,

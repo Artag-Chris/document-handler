@@ -1,10 +1,8 @@
 import { Request, Response, NextFunction } from 'express';
 
 export const corsMiddleware = (req: Request, res: Response, next: NextFunction) => {
-  const origin = req.headers.origin;
+ // const origin = req.headers.origin;
   
-  // Log para debugging
-  console.log(`🌐 CORS Middleware - Origin: ${origin}, Method: ${req.method}, Path: ${req.path}`);
   
   // Configurar headers CORS
   res.header('Access-Control-Allow-Origin', '*');

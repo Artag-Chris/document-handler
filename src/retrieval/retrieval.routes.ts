@@ -50,10 +50,47 @@ export class RetrievalRoutes {
     // Obtener documentos por tags
     router.get('/tags', validateTags, retrievalController.getDocumentsByTags);
 
-    // Descargar documento
+    // ============================================
+    // 🚀 RUTAS DIRECTAS POR RUTA RELATIVA (MÁS RÁPIDO)
+    // Usa directamente la ruta del documento sin búsquedas
+    // Ideal cuando ya tienes la ruta del documento
+    // ============================================
+
+    // Descargar por ruta relativa (POST)
+    // Body: { relativePath: "uploads/2025/uuid/folder/file.pdf" }
+    router.post('/download-by-path', retrievalController.downloadByPath);
+
+    // Visualizar por ruta relativa (POST)
+    // Body: { relativePath: "uploads/2025/uuid/folder/file.pdf" }
+    router.post('/view-by-path', retrievalController.viewByPath);
+
+    // ============================================
+    // RUTAS AVANZADAS DE DESCARGA Y VISUALIZACIÓN
+    // Buscan en TODAS las ubicaciones posibles:
+    // - Suplencias (docente_ausente y docente_reemplazo)
+    // - Actos Administrativos (por institución)
+    // - Horas Extra (todos los meses del año)
+    // - Carpetas estándar de empleados
+    // ============================================
+
+    // Descargar documento (búsqueda avanzada multi-ubicación)
+    router.get('/download-advanced/:id', validateDocumentId, retrievalController.downloadDocumentAdvanced);
+
+    // Visualizar documento (búsqueda avanzada multi-ubicación)
+    router.get('/view-advanced/:id', validateDocumentId, retrievalController.viewDocumentAdvanced);
+
+    // Obtener información de ubicación del documento
+    router.get('/location-info/:id', validateDocumentId, retrievalController.getDocumentLocationInfo);
+
+    // ============================================
+    // RUTAS ESTÁNDAR DE DESCARGA Y VISUALIZACIÓN
+    // Solo buscan en carpetas estándar de empleados
+    // ============================================
+
+    // Descargar documento (método estándar)
     router.get('/download/:id', validateDocumentId, retrievalController.downloadDocument);
 
-    // Visualizar documento
+    // Visualizar documento (método estándar)
     router.get('/view/:id', validateDocumentId, retrievalController.viewDocument);
 
     return router;

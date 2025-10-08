@@ -603,4 +603,310 @@ export class RetrievalService {
     
     return path.join(process.cwd(), 'uploads', year.toString(), employeeUuid, documentType, filename);
   }
+
+  /**
+   * 🔍 BÚSQUEDA AVANZADA: Buscar archivo en múltiples ubicaciones
+   * Este método busca un documento por ID en todas las ubicaciones posibles:
+   * - Suplencias (docente_ausente y docente_reemplazo)
+   * - Actos Administrativos
+   * - Horas Extra
+   * - Ubicación estándar de empleados
+   */
+  async findDocumentInAllLocations(documentId: string): Promise<{
+    filePath: string;
+    document: DocumentMetadataDto;
+    location: string;
+  } | null> {
+    try {
+      console.log(`\n🔍 Buscando documento: ${documentId} en todas las ubicaciones...`);
+
+      // 1. Intentar obtener el documento de memoria o Elasticsearch
+      let document = await this.documentsService.getDocumentById(documentId);
+
+      if (!document) {
+        console.log('📊 No encontrado en memoria, buscando en Elasticsearch...');
+        const elasticDoc = await this.documentsService.getDocumentByIdFromElasticsearch(
+          documentId,
+          `documents-${new Date().getFullYear()}`
+        );
+
+        if (elasticDoc) {
+          document = {
+            id: elasticDoc.id || documentId,
+            filename: elasticDoc.filename,
+            originalName: elasticDoc.filename || elasticDoc.title,
+            mimetype: elasticDoc.mimetype || 'application/pdf',
+            size: elasticDoc.size || 0,
+            uploadDate: new Date(elasticDoc.uploadDate),
+            title: elasticDoc.title,
+            description: elasticDoc.description,
+            tags: elasticDoc.tags || [],
+            category: elasticDoc.category,
+            extractedText: elasticDoc.content,
+            keywords: elasticDoc.keywords || [],
+            employeeUuid: elasticDoc.employeeUuid,
+            employeeName: elasticDoc.employeeName,
+            employeeCedula: elasticDoc.employeeCedula,
+            documentType: elasticDoc.documentType,
+            year: elasticDoc.year,
+            filePath: '',
+            relativePath: elasticDoc.relativePath || ''
+          };
+        }
+      }
+
+      if (!document) {
+        console.log('❌ Documento no encontrado en ningún índice');
+        return null;
+      }
+
+      console.log(`✅ Documento encontrado en índice: ${document.title}`);
+      console.log(`📝 Metadata:`, {
+        category: document.category,
+        documentType: document.documentType,
+        employeeUuid: document.employeeUuid,
+        year: document.year
+      });
+
+      // 2. Lista de ubicaciones a buscar
+      const searchLocations = this.generateSearchLocations(document);
+
+      console.log(`📂 Ubicaciones a buscar: ${searchLocations.length}`);
+
+      // 3. Buscar en cada ubicación
+      for (const location of searchLocations) {
+        console.log(`🔎 Buscando en: ${location.path}`);
+        
+        if (existsSync(location.path)) {
+          console.log(`✅ ¡Archivo encontrado en: ${location.description}!`);
+          return {
+            filePath: location.path,
+            document,
+            location: location.description
+          };
+        }
+      }
+
+      // 4. Si no se encuentra, buscar por patrón en directorio
+      console.log('🔄 Archivo no encontrado en rutas directas, buscando por patrón...');
+      
+      const foundByPattern = await this.searchByPattern(document);
+      if (foundByPattern) {
+        return foundByPattern;
+      }
+
+      console.log('❌ Archivo no encontrado en ninguna ubicación');
+      throw new Error(`Archivo no encontrado en el sistema: ${document.filename}`);
+
+    } catch (error) {
+      console.error('❌ Error en findDocumentInAllLocations:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Generar todas las ubicaciones posibles donde puede estar el archivo
+   */
+  private generateSearchLocations(document: DocumentMetadataDto): Array<{ path: string; description: string }> {
+    const locations: Array<{ path: string; description: string }> = [];
+    const currentYear = document.year || new Date().getFullYear();
+    const baseDir = process.cwd();
+
+    // Obtener información del metadata si existe
+    const metadata = (document as any).metadata;
+
+    // UBICACIÓN 1: Ruta relativa directa (si existe)
+    if (document.relativePath) {
+      const normalizedPath = document.relativePath.replace(/\\/g, '/');
+      locations.push({
+        path: path.join(baseDir, normalizedPath),
+        description: 'Ruta relativa del documento'
+      });
+    }
+
+    // UBICACIÓN 2: Ruta absoluta (si existe)
+    if (document.filePath && document.filePath !== '') {
+      locations.push({
+        path: document.filePath,
+        description: 'Ruta absoluta del documento'
+      });
+    }
+
+    // UBICACIÓN 3: Suplencias (si el documento es de tipo suplencia)
+    if (document.category === 'suplencias' || document.documentType === 'suplencia' || metadata?.tipo === 'suplencia') {
+      const suplenciaId = metadata?.suplencia_id;
+      const docenteAusenteId = metadata?.docente_ausente_id;
+      const docenteReemplazoId = metadata?.docente_reemplazo_id;
+
+      // Carpeta del docente ausente
+      if (docenteAusenteId) {
+        locations.push({
+          path: path.join(baseDir, 'uploads', 'suplencias', currentYear.toString(), docenteAusenteId, document.filename),
+          description: `Suplencias - Docente Ausente (${docenteAusenteId})`
+        });
+      }
+
+      // Carpeta del docente de reemplazo
+      if (docenteReemplazoId) {
+        locations.push({
+          path: path.join(baseDir, 'uploads', 'suplencias', currentYear.toString(), docenteReemplazoId, document.filename),
+          description: `Suplencias - Docente Reemplazo (${docenteReemplazoId})`
+        });
+      }
+
+      // Si no hay metadata, buscar con employeeUuid
+      if (document.employeeUuid) {
+        locations.push({
+          path: path.join(baseDir, 'uploads', 'suplencias', currentYear.toString(), document.employeeUuid, document.filename),
+          description: `Suplencias - Employee UUID (${document.employeeUuid})`
+        });
+      }
+    }
+
+    // UBICACIÓN 4: Actos Administrativos
+    if (document.category === 'actos_administrativos' || document.documentType === 'acto_administrativo' || metadata?.tipo === 'acto_administrativo') {
+      const institucionId = metadata?.institucion_educativa_id || document.employeeUuid;
+
+      if (institucionId) {
+        locations.push({
+          path: path.join(baseDir, 'uploads', 'actos_administrativos', currentYear.toString(), institucionId, document.filename),
+          description: `Actos Administrativos - Institución (${institucionId})`
+        });
+      }
+    }
+
+    // UBICACIÓN 5: Horas Extra
+    if (document.category === 'horas_extra' || document.documentType === 'horas_extra' || metadata?.tipo === 'horas_extra') {
+      const currentMonth = new Date().getMonth() + 1;
+      const monthStr = currentMonth.toString().padStart(2, '0');
+
+      locations.push({
+        path: path.join(baseDir, 'uploads', 'horas_extra', currentYear.toString(), monthStr, document.filename),
+        description: `Horas Extra - Mes actual (${monthStr}/${currentYear})`
+      });
+
+      // Buscar en todos los meses del año actual
+      for (let month = 1; month <= 12; month++) {
+        const monthPadded = month.toString().padStart(2, '0');
+        locations.push({
+          path: path.join(baseDir, 'uploads', 'horas_extra', currentYear.toString(), monthPadded, document.filename),
+          description: `Horas Extra - Mes ${monthPadded}/${currentYear}`
+        });
+      }
+    }
+
+    // UBICACIÓN 6: Ubicación estándar de empleado
+    if (document.employeeUuid) {
+      const docType = document.documentType || 'documentos';
+      locations.push({
+        path: path.join(baseDir, 'uploads', currentYear.toString(), document.employeeUuid, docType, document.filename),
+        description: `Empleado - ${docType} (${document.employeeUuid})`
+      });
+
+      // También buscar sin el tipo de documento
+      locations.push({
+        path: path.join(baseDir, 'uploads', currentYear.toString(), document.employeeUuid, document.filename),
+        description: `Empleado - Raíz (${document.employeeUuid})`
+      });
+    }
+
+    return locations;
+  }
+
+  /**
+   * Buscar archivo por patrón en directorios
+   */
+  private async searchByPattern(document: DocumentMetadataDto): Promise<{
+    filePath: string;
+    document: DocumentMetadataDto;
+    location: string;
+  } | null> {
+    try {
+      const currentYear = document.year || new Date().getFullYear();
+      const baseDir = process.cwd();
+      const uploadsDir = path.join(baseDir, 'uploads');
+
+      // Extraer información del nombre del archivo
+      const filenameParts = document.filename.split('_');
+      
+      if (filenameParts.length >= 4) {
+        const [year, cedula, docType] = filenameParts;
+        const extension = path.extname(document.filename);
+        const baseName = path.basename(document.filename, extension);
+        const lastPart = baseName.split('_').pop();
+
+        // Directorios específicos a buscar
+        const searchDirs = [
+          path.join(uploadsDir, 'suplencias', currentYear.toString()),
+          path.join(uploadsDir, 'actos_administrativos', currentYear.toString()),
+          path.join(uploadsDir, 'horas_extra', currentYear.toString()),
+          path.join(uploadsDir, currentYear.toString())
+        ];
+
+        for (const searchDir of searchDirs) {
+          if (!existsSync(searchDir)) continue;
+
+          const found = await this.searchInDirectory(
+            searchDir,
+            document.filename,
+            lastPart || '',
+            extension
+          );
+
+          if (found) {
+            console.log(`✅ Archivo encontrado por patrón en: ${found}`);
+            return {
+              filePath: found,
+              document,
+              location: `Búsqueda por patrón en ${searchDir}`
+            };
+          }
+        }
+      }
+
+      return null;
+    } catch (error) {
+      console.error('Error en searchByPattern:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Buscar recursivamente en un directorio
+   */
+  private async searchInDirectory(
+    dir: string,
+    targetFilename: string,
+    lastPart: string,
+    extension: string
+  ): Promise<string | null> {
+    try {
+      const files = readdirSync(dir, { withFileTypes: true });
+
+      for (const file of files) {
+        const fullPath = path.join(dir, file.name);
+
+        if (file.isDirectory()) {
+          // Búsqueda recursiva
+          const found = await this.searchInDirectory(fullPath, targetFilename, lastPart, extension);
+          if (found) return found;
+        } else {
+          // Comprobar si es el archivo buscado
+          if (file.name === targetFilename) {
+            return fullPath;
+          }
+
+          // Búsqueda por patrón
+          if (lastPart && file.name.includes(lastPart) && file.name.endsWith(extension)) {
+            return fullPath;
+          }
+        }
+      }
+
+      return null;
+    } catch (error) {
+      console.error(`Error buscando en directorio ${dir}:`, error);
+      return null;
+    }
+  }
 }

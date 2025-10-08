@@ -13,13 +13,11 @@ export class DocumentsController {
    */
   uploadHorasExtraDocuments = async (req: Request, res: Response) => {
     try {
-      console.log('📥 Request recibido en uploadHorasExtraDocuments');
-      console.log('📋 Body:', req.body);
-      console.log('📎 Files:', req.files ? (Array.isArray(req.files) ? `${req.files.length} archivos` : 'Files object') : 'No files');
+
       
       // Verificar que haya archivos
       if (!req.files || !Array.isArray(req.files) || req.files.length === 0) {
-        console.warn('⚠️ No se recibieron archivos en el request');
+       
         return res.status(400).json({
           success: false,
           message: 'No se han proporcionado archivos. Asegúrate de enviar archivos con el campo "files" (plural)',
@@ -61,7 +59,7 @@ export class DocumentsController {
         });
       }
 
-      console.log(`📤 Procesando ${req.files.length} archivos para horas extra ${horas_extra_id}`);
+
 
       // Procesar archivos con el servicio
       const resultado = await this.documentsService.uploadHorasExtraDocuments(
@@ -104,13 +102,10 @@ export class DocumentsController {
    */
   uploadSuplenciaDocuments = async (req: Request, res: Response) => {
     try {
-      console.log('📥 Request recibido en uploadSuplenciaDocuments');
-      console.log('📋 Body:', req.body);
-      console.log('📎 Files:', req.files ? (Array.isArray(req.files) ? `${req.files.length} archivos` : 'Files object') : 'No files');
-      
+
       // Verificar que haya archivos
       if (!req.files || !Array.isArray(req.files) || req.files.length === 0) {
-        console.warn('⚠️ No se recibieron archivos en el request');
+        
         return res.status(400).json({
           success: false,
           message: 'No se han proporcionado archivos. Asegúrate de enviar archivos con el campo "files" (plural)',
@@ -143,8 +138,6 @@ export class DocumentsController {
           error: 'Missing employee IDs'
         });
       }
-
-      console.log(`📤 Procesando ${req.files.length} archivos para suplencia ${suplencia_id}`);
 
       // Procesar archivos con el servicio
       const resultado = await this.documentsService.uploadSuplenciaDocuments(
@@ -458,10 +451,7 @@ export class DocumentsController {
    */
   uploadActosAdministrativosDocuments = async (req: Request, res: Response) => {
     try {
-      console.log('📥 Request recibido en uploadActosAdministrativosDocuments');
-      console.log('📋 Body:', req.body);
-      console.log('📎 Files:', req.files ? (Array.isArray(req.files) ? `${req.files.length} archivos` : 'Files object') : 'No files');
-      
+    
       // Verificar que haya archivos
       if (!req.files || !Array.isArray(req.files) || req.files.length === 0) {
         console.warn('⚠️ No se recibieron archivos en el request');
@@ -506,9 +496,6 @@ export class DocumentsController {
         });
       }
 
-      console.log(`✅ Datos validados - Acto: ${acto_administrativo_id}, Institución: ${institucion_educativa_id}`);
-      console.log(`📂 Procesando ${req.files.length} archivo(s)...`);
-
       // Llamar al servicio para procesar los archivos
       const result = await this.documentsService.uploadActosAdministrativosDocuments(
         req.files as Express.Multer.File[],
@@ -519,8 +506,6 @@ export class DocumentsController {
         }
       );
 
-      // Devolver respuesta exitosa
-      console.log('✅ Archivos procesados exitosamente');
       return res.status(200).json({
         success: true,
         message: 'Archivos subidos exitosamente',
